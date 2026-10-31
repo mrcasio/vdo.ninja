@@ -9,3 +9,15 @@ Changes include show branding and readable chat/settings, account display/logout
 The October 31 source release adds license/source notices, current signaling source publication, complete build material and a deploy check. It does not change media routing, room permissions, audio gain or bitrate behavior.
 
 The entire modified software is offered under AGPL-3.0, with upstream copyright and third-party notices retained. ws is MIT licensed; source and license are bundled in deployment/vendor/ws. Show logos and favicons are separately owned branding assets; software licensing grants no trademark rights.
+
+## Access-security release, 2026-10-31
+
+The latest successful login wins for each fixed participant account (guest, Creator or Host). A new device replaces the old login; reconnecting the current login replaces an older socket from the same login. Main Production and co-director accounts retain multiple concurrent sessions. Account passwords are not changed by deployment. Broker restart migration keeps the newest existing fixed-participant session.
+
+A Production-only administration page lists the twelve Production-Joker and two Production-Creator accounts. Explicitly confirmed rotation changes only the selected accounts, invalidates their sessions, and signals revocation to receivers. New passwords are shown once and may be downloaded; only salted PBKDF2-SHA256 hashes persist in private session-state/credentials.json. Historical access-credentials.txt is not rewritten by the container and no longer reflects rotated accounts. Test, Staging, Host, Production and Director passwords cannot be rotated by this API.
+
+WebSocket upgrades verify the authenticated session with the private broker; a one-second revalidation closes revoked or expired sessions. A brief broker outage has a 30-second grace period for established connections. Per-account message/byte budgets, backpressure and idempotent seeding reduce flooding. Fixed participants use session cookies rather than legacy Basic authentication.
+
+Updated room/OBS browser pages close revoked peer connections and stop stale automatic reconnects. All browser/OBS pages must be reloaded once after deployment to load this enforcement code. Previously issued third-party TURN credentials retain their provider TTL; they are not revoked by a website password change. The receiver-side teardown applies to this browser deployment.
+
+Tests in deployment/tests use synthetic credentials and isolated loopback servers. No live credentials are included.

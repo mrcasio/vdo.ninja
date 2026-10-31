@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="de">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Production · Zugänge verwalten</title><link rel="icon" href="/favicon.ico">
+<style>
+:root{font:16px/1.5 system-ui;color-scheme:dark;background:#0c1739;color:#f6f9ff}body{margin:0;padding:24px}main{max-width:920px;margin:auto}header{display:flex;align-items:center;gap:24px;flex-wrap:wrap}header img{width:180px}h1{font-size:28px;margin-bottom:4px}a{color:#90e9ff}.card{border:1px solid #457da7;border-radius:16px;background:#14234b;padding:24px;margin:24px 0}button{cursor:pointer;border:1px solid #78cce9;border-radius:9px;background:#233b69;color:white;padding:10px 16px;font:inherit}button.primary{background:linear-gradient(100deg,#80e7ff,#bd9fff);color:#09183d;font-weight:700}button:disabled{opacity:.5;cursor:default}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:560px}td,th{border-bottom:1px solid #3a507a;padding:12px 8px;text-align:left}input[type=checkbox]{width:20px;height:20px;accent-color:#7cdfff}textarea{box-sizing:border-box;width:100%;min-height:300px;background:#0a1431;color:white;border:1px solid #78cce9;border-radius:8px;padding:12px;font:14px/1.6 ui-monospace,monospace}.muted{color:#bfd1ed}#message{white-space:pre-line}label{cursor:pointer}.status{border-left:3px solid #82e9ff;padding-left:16px}[hidden]{display:none!important}
+</style>
+<main>
+<header><img src="/media/show-logo.png" alt="Was weiß ich?!"><div><h1>Production-Zugänge</h1><div class="muted">Angemeldet als Production</div></div></header>
+<section class="card"><p>Hier kannst du neue Passwörter für die Joker und Creator im Production-Raum erzeugen. Die ausgewählten Konten werden dabei abgemeldet und ihre laufenden Verbindungen getrennt.</p><p class="muted">Host, Production, Director-Zugänge sowie Test und Staging werden hier nicht geändert. Die persönlichen Kurzlinks bleiben erhalten.</p>
+<div class="toolbar"><button id="all">Alle auswählen</button><button id="jokers">Nur Joker</button><button id="creators">Nur Creator</button><button id="none">Auswahl aufheben</button></div>
+<div class="table-wrap"><table><thead><tr><th>Auswahl</th><th>Teilnehmer</th><th>Benutzername</th><th>Zuletzt erneuert</th></tr></thead><tbody id="accounts"></tbody></table></div>
+<div class="toolbar"><button class="primary" id="rotate" disabled>Neue Passwörter erzeugen</button><button id="logout">Abmelden</button></div>
+<p id="message" class="status" role="status" aria-live="polite">Zugänge werden geladen …</p></section>
+<section class="card" id="result" hidden><h2>Neue Zugangsdaten</h2><p>Die Passwörter werden nur jetzt angezeigt. Lade die Liste herunter oder kopiere sie, bevor du diese Seite schließt.</p><textarea id="credentials" readonly aria-label="Neue Zugangsdaten"></textarea><div class="toolbar"><button id="copy">Liste kopieren</button><button id="download">Liste herunterladen</button></div></section>
+<p><a href="/source/">Quellcode &amp; Lizenz</a></p>
+</main>
+<script>
+'use strict';
+const table = document.getElementById('accounts');
+const message = document.getElementById('message');
+const rotate = document.getElementById('rotate');
+let busy = false;
+function selected() { return [...table.querySelectorAll('input:checked')].map(input => input.value); }
+function sync() { rotate.disabled = busy || !selected().length; rotate.textContent = busy ? 'Passwörter werden erzeugt …' : 'Neue Passwörter erzeugen (' + selected().length + ')'; }
+async function load() {
+  const response = await fetch('/api/production-access', { cache: 'no-store', credentials: 'same-origin' });
+  if (!response.ok) throw new Error('Bitte mit dem Production-Account anmelden.');
+  const data = await response.json(); table.replaceChildren();
+  for (const item of data.accounts) {
+    const row = document.createElement('tr');
+    const select = document.createElement('td'); const input = document.createElement('input'); input.type = 'checkbox'; input.value = item.username; input.setAttribute('aria-label', item.label + ' auswählen'); input.addEventListener('change', sync);select.append(input);row.append(select);
+    for (const value of [item.label, item.username, item.changedAt ? new Date(item.changedAt).toLocaleString('de-DE') : 'Bestehendes Passwort']) { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }
+    table.append(row);
+  }
+  message.textContent = 'Wähle die Konten aus, deren Passwörter du erneuern möchtest.';sync();
+}
+for (const mode of ['all','jokers','creators','none']) document.getElementById(mode).addEventListener('click', () => {
+  if (busy) return;
+  for (const input of table.querySelectorAll('input')) input.checked = mode === 'all' || (mode === 'jokers' && input.value.startsWith('Joker')) || (mode === 'creators' && input.value.startsWith('Creator'));
+  sync();
+});
+rotate.addEventListener('click', async () => {
+  const usernames = selected();
+  if (busy || !usernames.length || !confirm('Neue Passwörter für ' + usernames.length + ' Production-Konten erzeugen?\n\nDie ausgewählten Teilnehmer werden sofort getrennt. Bisherige Passwörter werden ungültig.')) return;
+  busy = true;sync();document.getElementById('result').hidden = true;document.getElementById('credentials').value = '';
+  try {
+    const response = await fetch('/api/production-access/rotate', { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-VDO-Action': 'rotate-production-access' }, body: JSON.stringify({ usernames, confirm: 'ROTATE_PRODUCTION' }) });
+    const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Änderung fehlgeschlagen.');
+    document.getElementById('credentials').value = data.credentials.map(item => 'Benutzer: ' + item.username + '\nPasswort: ' + item.password + '\nLink: ' + (item.link || 'Persönlichen Link weiterverwenden') + '\n').join('\n');
+    document.getElementById('result').hidden = false; await load(); message.textContent = data.message;document.getElementById('result').scrollIntoView({ behavior: 'smooth' });
+  } catch (error) { message.textContent = error.message; }
+  finally { busy = false;sync(); }
+});
+document.getElementById('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(document.getElementById('credentials').value);message.textContent = 'Zugangsdaten kopiert.'; } catch { document.getElementById('credentials').select();message.textContent = 'Bitte die markierte Liste kopieren.'; }
+});
+document.getElementById('download').addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([document.getElementById('credentials').value], { type: 'text/plain;charset=utf-8' }));
+  const anchor = document.createElement('a');anchor.href = url;anchor.download = 'Production-Zugaenge-' + new Date().toISOString().slice(0,10) + '.txt';anchor.click();setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+document.getElementById('logout').addEventListener('click', async () => {
+  const response = await fetch('/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-VDO-Action': 'logout' } });
+  if (response.ok) location.reload(); else message.textContent = 'Abmelden gerade nicht möglich.';
+});
+load().catch(error => { message.textContent = error.message; });
+</script>
+</html>

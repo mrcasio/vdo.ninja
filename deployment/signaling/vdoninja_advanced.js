@@ -11,6 +11,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const { randomUUID } = require('crypto');
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://video.easy-cube.de';
 const { WebSocketServer, WebSocket } = require('ws');
 
 const accessPolicy = JSON.parse(fs.readFileSync(process.env.ACCESS_POLICY || '/run/secrets/access-policy.json', 'utf8'));
@@ -78,6 +79,7 @@ function wireStreamId(input) {
 
 function safeSend(ws, payload) {
     if (ws && ws.readyState === WebSocket.OPEN) {
+        if (ws.bufferedAmount > 4 * 1024 * 1024) { ws.terminate(); return; }
         try {
             ws.send(payload);
         } catch (error) {
@@ -87,17 +89,117 @@ function safeSend(ws, payload) {
 }
 
 const { server, port } = createServer();
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 262144, perMessageDeflate: false });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 262144, perMessageDeflate: false });
 const clients = new Map();
 const streams = new Map();
 const streamIDs = new Map();
 const callbackView = new Map();
 const callbackCleanup = new Map();
+const lastPlay = new Map();
 const directors = new Map();
 const myRooms = new Map();
 const roomList = new Map();
 const identities = new Map();
 const mediaSubscriptions = new Map();
+const connectionSessions = new Map();
+const publishersByAccount = new Map();
+const messageBudgets = new Map();
+const connectBudgets = new Map();
+const brokerURL = new URL(process.env.AUTH_BROKER_URL || 'http://turn-broker:8080');
+if (brokerURL.protocol !== 'http:') throw new Error('Internal auth broker must use HTTP on the private bridge');
+let authPollRunning = false;
+let lastAuthSuccess = Date.now();
+
+function budget(map, key, cost, rate, burst) {
+    const now = Date.now();
+    const old = map.get(key);
+    const tokens = Math.min(burst, (old?.tokens ?? burst) + (now - (old?.time ?? now)) * rate / 1000);
+    if (!old && map.size >= 256) map.delete(map.keys().next().value);
+    map.set(key, { tokens: tokens >= cost ? tokens - cost : tokens, time: now });
+    return tokens >= cost;
+}
+function activeSessions() {
+    return new Promise((resolve, reject) => {
+        const request = http.get(new URL('/internal/active-sessions', brokerURL), response => {
+            let raw = '';
+            response.setEncoding('utf8');
+            response.on('data', chunk => {
+                raw += chunk;
+                if (raw.length > 1024 * 1024) response.destroy(new Error('Auth response too large'));
+            });
+            response.on('error', reject);
+            response.on('end', () => {
+                try {
+                    if (response.statusCode !== 200) throw new Error('Auth unavailable');
+                    const data = JSON.parse(raw);
+                    if (!data.sessions || typeof data.sessions !== 'object' || Array.isArray(data.sessions)) throw new Error('Invalid auth state');
+                    lastAuthSuccess = Date.now();
+                    resolve(data.sessions);
+                } catch (error) { reject(error); }
+            });
+        });
+        request.setTimeout(2000, () => request.destroy(new Error('Auth timeout')));
+        request.on('error', reject);
+    });
+}
+function validSession(snapshot, hash, username) {
+    return /^[a-f0-9]{64}$/.test(hash || '') && snapshot[hash]?.username === username && snapshot[hash].expires > Date.now();
+}
+function retire(uuid, reason = 'session-replaced') {
+    const ws = clients.get(uuid);
+    if (!ws) return;
+    const room = myRooms.get(uuid);
+    if (room) notifyRoom(room, { request: 'easycubePeerRevoked', UUID: uuid, streamID: streamIDs.get(uuid), reason }, [uuid]);
+    safeSend(ws, JSON.stringify({ request: 'easycubeAccessRevoked', reason }));
+    cleanupClient(uuid);
+    ws.removeAllListeners('message');
+    ws.close(4001, reason);
+    setTimeout(() => { if (ws.readyState !== WebSocket.CLOSED) ws.terminate(); }, 1000).unref();
+}
+server.on('upgrade', async (request, socket, head) => {
+    let target;
+    try { target = new URL(request.url, 'http://localhost'); } catch { socket.destroy(); return; }
+    const username = request.headers['x-authenticated-user'];
+    const account = accessPolicy.accounts[username] || obsViewerAccount(username);
+    const origin = request.headers.origin;
+    if (target.pathname !== '/ws' || !account || (origin && origin !== allowedOrigin)) {
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
+    }
+    const hash = request.headers['x-authenticated-session'];
+    if (isFixedParticipant(account) || hash) {
+        try {
+            const snapshot = await activeSessions();
+            if (!validSession(snapshot, hash, username)) {
+                socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return;
+            }
+            request.authIssuedAt = snapshot[hash].issuedAt;
+        } catch {
+            socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n'); return;
+        }
+    }
+    // Reconnecting with a new login always takes over. Throttle repeated upgrades
+    // from the same login, not the number of device changes across a show.
+    const previous = publishersByAccount.get(username);
+    const previousHash = previous && connectionSessions.get(previous)?.hash;
+    if ((!isFixedParticipant(account) || previousHash === hash) && !budget(connectBudgets, username, 1, 5, 20)) {
+        socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n'); return;
+    }
+    if (socket.destroyed) return;
+    wss.handleUpgrade(request, socket, head, ws => wss.emit('connection', ws, request));
+});
+setInterval(async () => {
+    if (authPollRunning || !connectionSessions.size) return;
+    authPollRunning = true;
+    try {
+        const snapshot = await activeSessions();
+        for (const [uuid, identity] of connectionSessions) {
+            if (!validSession(snapshot, identity.hash, identity.username)) retire(uuid, 'session-expired-or-replaced');
+        }
+    } catch {
+        // Brief broker restarts must not interrupt a live return feed.
+        if (Date.now() - lastAuthSuccess > 30000) for (const uuid of [...connectionSessions.keys()]) retire(uuid, 'access-service-unavailable');
+    } finally { authPollRunning = false; }
+}, 1000).unref();
 
 function isFixedParticipant(account) {
     return ['participant', 'creator', 'guest'].includes(account?.role);
@@ -196,6 +298,9 @@ function removeFromCallback(uuid) {
 function cleanupClient(uuid) {
     if (!clients.has(uuid)) return;
     clients.delete(uuid);
+    const username = connectionSessions.get(uuid)?.username;
+    if (username && publishersByAccount.get(username) === uuid) publishersByAccount.delete(username);
+    connectionSessions.delete(uuid);
     identities.delete(uuid);
     mediaSubscriptions.delete(uuid);
     for (const peers of mediaSubscriptions.values()) peers.delete(uuid);
@@ -215,6 +320,7 @@ function cleanupClient(uuid) {
             if (!members.length) roomList.delete(roomid);
         }
     }
+    lastPlay.delete(uuid);
     removeFromCallback(uuid);
 }
 
@@ -240,7 +346,7 @@ function notifyRoom(roomid, payload, skip) {
 
 wss.on('connection', (ws, request) => {
     const origin = request.headers.origin;
-    if (origin && origin !== 'https://video.easy-cube.de') {
+    if (origin && origin !== allowedOrigin) {
         ws.close(1008, 'Origin not allowed');
         return;
     }
@@ -254,6 +360,13 @@ wss.on('connection', (ws, request) => {
     // Treat the former creator role as a fixed participant during migration.
     const fixedParticipant = isFixedParticipant(account);
     const room = assignedRoom(account);
+    if (fixedParticipant) {
+        const previous = publishersByAccount.get(username);
+        if (previous && connectionSessions.get(previous)?.issuedAt > request.authIssuedAt) {
+            ws.close(4001, 'session-replaced'); return;
+        }
+        if (previous) retire(previous);
+    }
     if (clients.size >= 128) {
         ws.close(1013, 'Server busy');
         return;
@@ -261,11 +374,20 @@ wss.on('connection', (ws, request) => {
     const uuid = randomUUID();
     clients.set(uuid, ws);
     identities.set(uuid, account);
+    const sessionHash = request.headers['x-authenticated-session'];
+    if (sessionHash) connectionSessions.set(uuid, { username, hash: sessionHash, issuedAt: request.authIssuedAt });
+    if (fixedParticipant) publishersByAccount.set(username, uuid);
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     ws.on('close', () => cleanupClient(uuid));
     ws.on('error', () => cleanupClient(uuid));
     ws.on('message', raw => {
+        if (!clients.has(uuid)) return;
+        if (!budget(messageBudgets, username, 1, 150, 600) ||
+            !budget(messageBudgets, username + ':bytes', raw.length, 1024 * 1024, 4 * 1024 * 1024)) {
+            retire(uuid, 'message-rate-exceeded');
+            return;
+        }
         let data;
         try {
             data = JSON.parse(raw);
@@ -309,6 +431,17 @@ wss.on('connection', (ws, request) => {
                     safeSend(requester, JSON.stringify({ request: 'alert', message: 'This source is not configured for OBS.' }));
                     return;
                 }
+                if (['director', 'codirector'].includes(account.role)) {
+                    const names = account.role === 'director' ? account.rooms : [account.room];
+                    if (!names.some(name => streamID === wireStreamId(accessPolicy.rooms[name]?.returnStream) || participantStreamInRoom(name, streamID))) {
+                        safeSend(requester, JSON.stringify({ request: 'alert', message: 'This source is not configured for this account.' }));
+                        return;
+                    }
+                }
+                if (!lastPlay.has(uuid)) lastPlay.set(uuid, new Map());
+                const recent = lastPlay.get(uuid);
+                if (Date.now() - (recent.get(streamID) || 0) < 500) return;
+                recent.set(streamID, Date.now());
                 if (!streams.has(streamID)) {
                     queueForStream(uuid, streamID);
                     return;
@@ -350,6 +483,11 @@ wss.on('connection', (ws, request) => {
                         }
                         cleanupClient(existing);
                     }
+                }
+                if (streamIDs.get(uuid) === streamID) return;
+                if (streamIDs.has(uuid)) {
+                    safeSend(requester, JSON.stringify({ request: 'alert', message: 'Reconnect before changing stream IDs.' }));
+                    return;
                 }
                 streams.set(streamID, uuid);
                 streamIDs.set(uuid, streamID);

@@ -11,3 +11,13 @@ The source files use no frontend build step. Node and Caddy are pinned in the Do
 Source releases must be published before deploying changed code. scripts/verify-public-source.py verifies the runtime files against source-release.json, and deploy.sh runs it before recreating containers. Refresh that manifest only for a reviewed, published release.
 
 The public Nginx and Compose files are examples: deployment-specific hostnames, certificate paths and bridge addresses are replaced with video.example.org and a sample 172.30.201.176/29 subnet. They are not the private production vhost. Update these settings consistently for your own installation.
+
+## Sessions and access administration
+
+Open /production-access and log in as Production. Select Joker and/or Creator accounts, confirm the change, and save the displayed list. The passwords are shown only once. Host/Production/Director credentials and other environments cannot be changed from this page. The old server-only access list does not update after rotations; use the newly downloaded list. Overrides are hashed only, persisted in session-state/credentials.json, and must be kept in backups along with sessions.json. Never copy session-state into the frontend or Git.
+
+The nginx auth subrequest forwards the hashed session identifier to the private signaling server. Signaling polls turn-broker:8080/internal/active-sessions over the existing isolated bridge. Do not expose the broker or this internal endpoint directly. AUTH_BROKER_URL can configure the internal broker address. ALLOWED_ORIGIN configures the trusted browser origin in the two server components; it defaults to the production public hostname. BIND_HOST is optional for broker test fixtures; its container default is 0.0.0.0. No new public ports or writable secret mounts are required.
+
+Reload all participant/Director pages and OBS browser sources once after deployment so receiver-side media revocation is active. Normal device changes remain supported: the latest login wins, and an older page cannot automatically reclaim that login. A person who still knows an unchanged password can log in again; rotate credentials after each event. Password rotation does not revoke already-issued third-party TURN credentials before their provider TTL.
+
+Run the integration test with Node 24 and ws available on NODE_PATH: node deployment/tests/access-security.integration.js. It spawns only loopback fixture servers, uses generated temporary secrets, and removes them afterward.

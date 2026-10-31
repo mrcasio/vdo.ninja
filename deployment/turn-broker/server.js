@@ -6,11 +6,13 @@ const http = require('node:http');
 const https = require('node:https');
 const { createHash, timingSafeEqual, randomBytes, pbkdf2 } = require('node:crypto');
 const { promisify } = require('node:util');
+const { participant, rotatable, CredentialStore, RateLimiter, atomicJSON } = require('./access-manager');
+const path = require('node:path');
 
 const port = Number(process.env.PORT || 8080);
 const ttlSeconds = 10800;
 const cacheMilliseconds = 5 * 60 * 1000;
-const allowedOrigin = 'https://video.easy-cube.de';
+const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://video.easy-cube.de';
 const configPath = process.env.TWILIO_CONFIG || '/run/secrets/twilio.json';
 const hashesPath = process.env.TURN_KEY_HASHES || '/run/secrets/turn-key-hashes.json';
 const accessPolicyPath = process.env.ACCESS_POLICY || '/run/secrets/access-policy.json';
@@ -20,6 +22,15 @@ const obsViewersPath = process.env.OBS_VIEWERS_FILE || '/run/secrets/obs-viewers
 const sessionFile = process.env.SESSION_FILE || '/run/session-state/sessions.json';
 const loginPagePath = process.env.LOGIN_PAGE || '/app/login.html';
 const sessionLifetime = 24 * 60 * 60 * 1000;
+const credentials = new CredentialStore(passwordHashesPath, process.env.CREDENTIAL_OVERRIDES || path.join(path.dirname(sessionFile), 'credentials.json'));
+const adminPagePath = process.env.ADMIN_PAGE || '/app/production-access.html';
+const authAttempts = new RateLimiter(10, 40);
+let passwordChecks = 0;
+let rotationBusy = false;
+let lastLoginIssued = Date.now();
+function policy() { return JSON.parse(fs.readFileSync(accessPolicyPath, 'utf8')); }
+function isProductionAdmin(req) { return currentSession(req) === 'Production' && policy().accounts?.Production?.role === 'director'; }
+
 const verifyPasswordHash = promisify(pbkdf2);
 const cache = new Map();
 const pending = new Map();
@@ -248,57 +259,65 @@ function tokenHash(token) {
   return createHash('sha256').update(token, 'ascii').digest('hex');
 }
 
-function currentSession(req) {
+function sessionValid(hash, record) {
+  if (!record || record.expires <= Date.now() || !policy().accounts?.[record.username]) return false;
+  const fingerprint = credentials.fingerprint(record.username);
+  return Boolean(fingerprint && (record.credentialVersion ? record.credentialVersion === fingerprint : !credentials.overrides.accounts[record.username]));
+}
+function sessionInfo(req) {
   const token = cookie(req, '__Host-vdo_session');
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
-  const session = sessions[tokenHash(token)];
-  if (!session || session.expires <= Date.now()) return null;
-  try {
-    const policy = JSON.parse(fs.readFileSync(accessPolicyPath, 'utf8'));
-    return Object.hasOwn(policy.accounts, session.username) ? session.username : null;
-  } catch {
-    return null;
-  }
+  const hash = tokenHash(token);
+  const record = sessions[hash];
+  return sessionValid(hash, record) ? { hash, username: record.username } : null;
 }
-
+function currentSession(req) { return sessionInfo(req)?.username || null; }
 function saveSessions() {
   for (const [key, value] of Object.entries(sessions)) {
-    if (!value || value.expires <= Date.now()) delete sessions[key];
+    if (!sessionValid(key, value)) delete sessions[key];
   }
-  const temporary = `${sessionFile}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(sessions), { mode: 0o600 });
-  fs.renameSync(temporary, sessionFile);
+  atomicJSON(sessionFile, sessions);
+}
+// Existing credentials remain valid. Keep only the most recent participant login.
+{
+  const newest = new Map();
+  const accounts = policy().accounts;
+  for (const [hash, record] of Object.entries(sessions)) {
+    if (!sessionValid(hash, record)) { delete sessions[hash]; continue; }
+    if (!participant(accounts[record.username])) continue;
+    const previous = newest.get(record.username);
+    if (previous && sessions[previous].expires > record.expires) delete sessions[hash];
+    else { if (previous) delete sessions[previous]; newest.set(record.username, hash); }
+  }
+  saveSessions();
 }
 
 async function validPassword(username, password) {
-  if (typeof username !== 'string' || typeof password !== 'string' ||
-      username.length > 64 || password.length > 256) return false;
-  let item;
+  if (typeof username !== 'string' || typeof password !== 'string' || username.length > 64 || password.length > 256) return false;
+  const item = credentials.record(username);
+  if (!item || passwordChecks >= 32) return false;
+  const fingerprint = credentials.fingerprint(username);
+  passwordChecks++;
   try {
-    const data = JSON.parse(fs.readFileSync(passwordHashesPath, 'utf8'));
-    item = data.accounts?.[username];
-  } catch {
-    return false;
-  }
-  if (!item || !/^[0-9a-f]{32}$/.test(item.salt) ||
-      !/^[0-9a-f]{64}$/.test(item.hash) || item.iterations !== 310000) return false;
-  const digest = await verifyPasswordHash(password, Buffer.from(item.salt, 'hex'), item.iterations, 32, 'sha256');
-  return timingSafeEqual(digest, Buffer.from(item.hash, 'hex'));
+    const digest = await verifyPasswordHash(password, Buffer.from(item.salt, 'hex'), item.iterations, 32, 'sha256');
+    return timingSafeEqual(digest, Buffer.from(item.hash, 'hex')) && credentials.fingerprint(username) === fingerprint;
+  } finally { passwordChecks--; }
 }
 
-async function basicUser(authorization) {
+async function basicUser(authorization, source) {
   if (typeof authorization !== 'string' || authorization.length > 4096 ||
       !/^Basic [A-Za-z0-9+/=]+$/.test(authorization)) return null;
   const key = tokenHash(authorization);
   const cached = basicCache.get(key);
   if (cached && cached.expires > Date.now()) return cached.username;
   if (basicPending.has(key)) return basicPending.get(key);
+  if (!authAttempts.take(source)) return null;
   const verification = (async () => {
     let username = null;
     try {
       const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
       const colon = decoded.indexOf(':');
-      if (colon > 0 && await validPassword(decoded.slice(0, colon), decoded.slice(colon + 1))) {
+      if (colon > 0 && !participant(policy().accounts?.[decoded.slice(0, colon)]) && await validPassword(decoded.slice(0, colon), decoded.slice(colon + 1))) {
         username = decoded.slice(0, colon);
       }
     } catch {
@@ -316,9 +335,10 @@ async function basicUser(authorization) {
   }
 }
 
-function authReply(res, status, username) {
+function authReply(res, status, username, sessionHash) {
   const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
   if (username) headers['X-Authenticated-User'] = username;
+  if (sessionHash) headers['X-Authenticated-Session'] = sessionHash;
   res.writeHead(status, headers);
   res.end();
 }
@@ -335,6 +355,7 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', chunk => {
+      if (raw.length > 2048) return;
       raw += chunk;
       if (raw.length > 2048) reject(new Error('Request too large'));
     });
@@ -389,8 +410,61 @@ function requestToken(config) {
   });
 }
 
-http.createServer(async (req, res) => {
+
+async function productionAccess(req, res) {
+  if (!isProductionAdmin(req)) return send(res, 403, { error: 'Production login required' });
+  const accounts = policy().accounts;
+  if (req.url === '/production-access' && req.method === 'GET') {
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    });
+    return res.end(fs.readFileSync(adminPagePath));
+  }
+  if (req.url === '/api/production-access' && req.method === 'GET') {
+    return send(res, 200, { accounts: Object.entries(accounts).filter(([name, account]) => rotatable(name, account)).map(([username, account]) => ({
+      username, label: account.label || username,
+      changedAt: credentials.overrides.accounts[username]?.changedAt || null,
+    })) });
+  }
+  if (req.url !== '/api/production-access/rotate' || req.method !== 'POST') return send(res, 404, { error: 'Not found' });
+  if (!validAction(req, 'rotate-production-access') || req.headers['content-type'] !== 'application/json') return send(res, 403, { error: 'Forbidden' });
+  if (rotationBusy) return send(res, 409, { error: 'Eine Änderung läuft bereits.' });
+  let body;
+  try { body = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'Invalid request' }); }
+  if (!body || Object.keys(body).sort().join(',') !== 'confirm,usernames' || body.confirm !== 'ROTATE_PRODUCTION' ||
+      !Array.isArray(body.usernames) || body.usernames.length < 1 || body.usernames.length > 14 ||
+      new Set(body.usernames).size !== body.usernames.length ||
+      !body.usernames.every(name => typeof name === 'string' && Object.hasOwn(accounts, name) && rotatable(name, accounts[name]))) {
+    return send(res, 400, { error: 'Nur Production-Joker und -Creator können hier geändert werden.' });
+  }
+  rotationBusy = true;
+  try {
+    const changed = await credentials.rotate(body.usernames);
+    for (const [hash, record] of Object.entries(sessions)) if (body.usernames.includes(record.username)) delete sessions[hash];
+    basicCache.clear();
+    try { saveSessions(); } catch (error) { console.error('Session persistence after rotation failed:', error.name); }
+    for (const item of changed) {
+      const invite = Object.entries(shortlinks.links).find(([, link]) => link.username === item.username);
+      item.link = invite ? allowedOrigin + '/l/' + invite[0] : null;
+    }
+    return send(res, 200, { credentials: changed, message: 'Passwörter erneuert. Alte Sitzungen werden getrennt. Diese Passwörter werden nur jetzt angezeigt.' });
+  } finally { rotationBusy = false; }
+}
+
+async function handleRequest(req, res) {
   if (req.url === '/health' && req.method === 'GET') return send(res, 200, { ok: true });
+  if (req.url === '/internal/active-sessions' && req.method === 'GET') {
+    const active = {};
+    for (const [hash, record] of Object.entries(sessions)) {
+      if (sessionValid(hash, record)) active[hash] = { username: record.username, expires: record.expires, issuedAt: record.createdAt || record.expires - sessionLifetime };
+    }
+    return send(res, 200, { sessions: active });
+  }
+  if (req.url === '/production-access' || req.url?.startsWith('/api/production-access')) {
+    return productionAccess(req, res);
+  }
   const obsLink = /^\/obs\/([A-Za-z0-9_-]{32})$/.exec(req.url || '');
   if (obsLink) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'Use GET' });
@@ -453,8 +527,9 @@ http.createServer(async (req, res) => {
         const viewer = obsRequest(originalURI, req.headers['x-obs-token']);
         return viewer ? authReply(res, 204, viewer) : authReply(res, 403);
       }
-      const username = currentSession(req) ||
-        (cookie(req, '__Host-vdo_logged_out') === '1' ? null : await basicUser(req.headers.authorization));
+      const identity = sessionInfo(req);
+      const username = identity?.username ||
+        (cookie(req, '__Host-vdo_logged_out') === '1' ? null : await basicUser(req.headers.authorization, String(req.headers['x-real-ip'] || req.socket.remoteAddress)));
       if (!username) {
         if (obsAsset(originalURI) && obsViewer(cookie(req, '__Host-vdo_obs_assets'))) {
           return authReply(res, 204);
@@ -465,7 +540,7 @@ http.createServer(async (req, res) => {
       if (checkEntry === null || (checkEntry && !allowEntry(username, req.headers['x-original-uri']))) {
         return authReply(res, 403);
       }
-      return authReply(res, 204, username);
+      return authReply(res, 204, username, identity?.hash);
     } catch (error) {
       console.error(`Access check failed: ${error.message}`);
       return authReply(res, 503);
@@ -478,7 +553,7 @@ http.createServer(async (req, res) => {
       if (typeof username !== 'string' || !Object.hasOwn(policy.accounts, username)) {
         return send(res, 403, { error: 'Forbidden' });
       }
-      return send(res, 200, { username });
+      return send(res, 200, { username, canManageProductionAccess: username === 'Production' && policy.accounts?.Production?.role === 'director' });
     } catch {
       return send(res, 503, { error: 'Account unavailable' });
     }
@@ -512,6 +587,7 @@ http.createServer(async (req, res) => {
     const password = params.get('password');
     if (params.size !== 2 || !username || !password) return send(res, 400, { error: 'Missing credentials' });
     const source = String(req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown');
+    if (!authAttempts.take(source)) return send(res, 429, { error: 'Please wait before retrying' });
     const failKey = `${source}:${username}`;
     const failures = loginFailures.get(failKey);
     if (failures && failures.count >= 10 && failures.until > Date.now()) {
@@ -525,7 +601,11 @@ http.createServer(async (req, res) => {
     }
     loginFailures.delete(failKey);
     const token = randomBytes(32).toString('base64url');
-    sessions[tokenHash(token)] = { username, expires: Date.now() + sessionLifetime };
+    if (participant(policy().accounts?.[username])) {
+      for (const [hash, record] of Object.entries(sessions)) if (record.username === username) delete sessions[hash];
+    }
+    lastLoginIssued = Math.max(Date.now(), lastLoginIssued + 1);
+    sessions[tokenHash(token)] = { username, createdAt: lastLoginIssued, credentialVersion: credentials.fingerprint(username), expires: lastLoginIssued + sessionLifetime };
     try {
       saveSessions();
     } catch (error) {
@@ -579,4 +659,11 @@ http.createServer(async (req, res) => {
   } finally {
     pending.delete(keyHash);
   }
-}).listen(port, () => console.log(`TURN broker listening on ${port}`));
+}
+http.createServer((req, res) => {
+  handleRequest(req, res).catch(error => {
+    console.error('Request failed:', error.name);
+    if (!res.headersSent) send(res, 503, { error: 'Service unavailable' });
+    else res.destroy();
+  });
+}).listen(port, process.env.BIND_HOST || '0.0.0.0', () => console.log(`TURN broker listening on ${port}`));
