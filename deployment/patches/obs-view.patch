@@ -1,0 +1,35 @@
+--- a/index.html
++++ b/index.html
+@@ -3394,6 +3394,10 @@
+ 
+ 			//  If wanting to fully-self-host, uncomment the following and deploy your own websocket server; good for air-gapped deployments
+ 			session.wss = "wss://video.easy-cube.de/ws";
++			const easycubeObsToken = new URLSearchParams(window.location.search).get("obstoken");
++			if (/^[A-Za-z0-9_-]{32}$/.test(easycubeObsToken || "")) {
++				session.wss += "?obstoken=" + encodeURIComponent(easycubeObsToken);
++			}
+ 			session.customWSS = false;
+ 			//////
+ 			
+@@ -3495,7 +3499,7 @@
+ 				</script>
+ 
+ 		<script type="text/javascript" crossorigin="anonymous" id="lib-js" src="./lib.js?ver=1413"></script>
+-		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1064"></script>
++		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1065"></script>
+ 		<script type="module" src="./podcast/bootstrap.js"></script>
+ 		<a href="/source/signaling/" style="position:fixed;bottom:4px;left:8px;z-index:2;color:#aaa;font-size:11px;" rel="license">Signaling source (AGPL)</a>
+ 		
+--- a/main.js
++++ b/main.js
+@@ -6875,6 +6875,10 @@
+ 				turnRequest.timeout = 10000;
+ 				turnRequest.open("POST", "/api/turn", true);
+ 				turnRequest.setRequestHeader("X-Turn-Key", turnKey);
++				var easycubeObsToken = urlParams.get("obstoken");
++				if (/^[A-Za-z0-9_-]{32}$/.test(easycubeObsToken || "")) {
++					turnRequest.setRequestHeader("X-Obs-Token", easycubeObsToken);
++				}
+ 				turnRequest.send();
+ 			} else {
+ 				console.error("TURN key missing from invite URL");

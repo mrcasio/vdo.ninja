@@ -1,3 +1,4 @@
+/* Modified by easyCube, 2026-09-24 through 2026-10-31. Distributed under AGPL-3.0. See MODIFICATIONS.md and AGPLv3.md. */
 /*
  *  Copyright (c) 2026 Steve Seguin. All Rights Reserved.
  *
@@ -470,6 +471,11 @@ function mapToAll(targets, callback, parentElement = document) {
 }
 
 function changeParam(url, paramName, paramValue) {
+	var hashIndex = url.indexOf("#");
+	var fragment = hashIndex === -1 ? "" : url.substring(hashIndex);
+	if (hashIndex !== -1) {
+		url = url.substring(0, hashIndex);
+	}
 	paramName = paramName.replace("?", "");
 	var qind = url.indexOf("?");
 	url = url.replace("?", "&");
@@ -501,7 +507,7 @@ function changeParam(url, paramName, paramValue) {
 			query = query + "&" + name + value;
 		}
 	}
-	return url.substring(0, qind) + query;
+	return url.substring(0, qind) + query + fragment;
 }
 
 function saveRoom(ele) {

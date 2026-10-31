@@ -1,0 +1,16 @@
+{
+    auto_https off
+    admin off
+}
+
+:8080 {
+    root * /srv
+    encode gzip
+    try_files {path} {path}.html {path}/
+    file_server
+
+    log {
+        output stdout
+        format console
+    }
+}

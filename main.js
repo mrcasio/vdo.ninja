@@ -1,3 +1,4 @@
+/* Modified by easyCube, 2026-09-24 through 2026-10-31. Distributed under AGPL-3.0. See MODIFICATIONS.md and AGPLv3.md. */
 /*
  *  Copyright (c) 2026 Steve Seguin. All Rights Reserved.
  *
@@ -6837,50 +6838,51 @@ async function main() {
 		session.sdpSemantics = "plan-b"; // for legacy support, or debuggin, or whatever.
 	}
 
-	if (urlParams.has("turn")) {
-		var turnstring = urlParams.get("turn");
+	var turnFragmentParams = new URLSearchParams(window.location.hash.replace(/^#\??/, ""));
+	if (urlParams.has("turn") || turnFragmentParams.has("turn")) {
+		var turnstring = turnFragmentParams.get("turn") || urlParams.get("turn");
+		if (!turnstring && turnFragmentParams.has("turn") && turnFragmentParams.has("turnkey")) turnstring = "twilio";
 
 		if (turnstring == "twilio") {
-			// a sample function on loading remote credentials for TURN servers.
-			try {
-				session.ws = false; // prevents connection
-				var twillioRequest = new XMLHttpRequest();
-				twillioRequest.onload = function () {
+			var turnKey = turnFragmentParams.get("turnkey") || urlParams.get("turnkey") || "";
+			if (/^[0-9a-f]{64}$/i.test(turnKey)) {
+				session.ws = false; // Wait for the short-lived TURN credentials before signaling.
+				var resumeConnection = function () {
+					if (session.ws === false) {
+						session.ws = null;
+						session.connect();
+					}
+				};
+				var turnRequest = new XMLHttpRequest();
+				turnRequest.onload = function () {
 					if (this.status === 200) {
 						try {
-							var res = JSON.parse(this.responseText);
+							var response = JSON.parse(this.responseText);
+							if (!Array.isArray(response.ice_servers) || !response.ice_servers.length) throw new Error("TURN response missing ICE servers");
+							session.configuration = {
+								iceServers: response.ice_servers,
+								sdpSemantics: session.sdpSemantics
+							};
 						} catch (e) {
-							console.error(e);
-							return;
+							console.error("TURN response invalid", e);
 						}
-						session.configuration = {
-							iceServers: [
-								{
-									username: res["1"],
-									credential: res["2"],
-									url: "turn:global.turn.twilio.com:3478?transport=tcp",
-									urls: "turn:global.turn.twilio.com:3478?transport=tcp"
-								},
-								{
-									username: res["1"],
-									credential: res["2"],
-									url: "turn:global.turn.twilio.com:443?transport=tcp",
-									urls: "turn:global.turn.twilio.com:443?transport=tcp"
-								}
-							],
-							sdpSemantics: session.sdpSemantics // future-proofing
-						};
-						if (session.ws === false) {
-							session.ws = null; // allows connection (clears state)
-							session.connect(); // connect if not already connected.
-						}
+					} else {
+						console.error("TURN credentials unavailable", this.status);
 					}
-					// system does not connect if twilio API does not respond.
+					resumeConnection(); // Continue with direct P2P if TURN is unavailable.
 				};
-				twillioRequest.open("GET", "https://turn.example.com:443/twilio", true); // `false` makes the request synchronous
-				twillioRequest.send();
-			} catch (e) {
-				errorlog("Twilio Failed");
+				turnRequest.onerror = resumeConnection;
+				turnRequest.ontimeout = resumeConnection;
+				turnRequest.timeout = 10000;
+				turnRequest.open("POST", "/api/turn", true);
+				turnRequest.setRequestHeader("X-Turn-Key", turnKey);
+				var easycubeObsToken = urlParams.get("obstoken");
+				if (/^[A-Za-z0-9_-]{32}$/.test(easycubeObsToken || "")) {
+					turnRequest.setRequestHeader("X-Obs-Token", easycubeObsToken);
+				}
+				turnRequest.send();
+			} else {
+				console.error("TURN key missing from invite URL");
 			}
 		} else if (turnstring == "nostun") {
 			// disable TURN servers

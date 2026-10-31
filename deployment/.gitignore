@@ -1,0 +1,8 @@
+/src/
+/secrets/*
+!/secrets/access-policy.example.json
+/session-state/
+/acme-webroot/
+*.pem
+*.key
+__pycache__/

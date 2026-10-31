@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Persönlicher Zugang · Was weiß ich?! – Frag die anderen!</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+  <style>
+    :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #f5f9ff;
+      background: radial-gradient(circle at 15% 12%, #2360ae 0, transparent 37%),
+        radial-gradient(circle at 90% 84%, #542a9a 0, transparent 40%),
+        linear-gradient(145deg, #07142f, #102770 54%, #100b35);
+    }
+    main {
+      width: min(100%, 560px);
+      padding: clamp(24px, 5vw, 42px);
+      border: 1px solid #45cfff;
+      border-radius: 18px;
+      background: rgba(7, 19, 54, .88);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .35);
+    }
+    .show-logo { display: block; width: min(100%, 360px); height: 110px;
+      margin: 0 auto 24px; object-fit: cover; object-position: center; }
+    h1 { margin: 0 0 12px; font-size: clamp(26px, 5vw, 34px); }
+    p { margin: 0; color: #d4e9ff; font-size: 17px; line-height: 1.5; }
+    #activeAccount { margin-top: 22px; font-size: 15px; }
+    #activeAccount strong { color: #fff; }
+    button { margin-top: 25px; padding: 11px 18px; border: 1px solid #71e3ff;
+      border-radius: 9px; color: #f5f9ff; background: #173779;
+      font: inherit; font-weight: 700; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #74e6ff; outline-offset: 3px; }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="show-logo" src="/media/show-logo.png" alt="WAS WEISS ICH?! – FRAG DIE ANDEREN!">
+    <h1>Bitte persönlichen Link öffnen</h1>
+    <p>Dieser Zugang ist an einen festen Link gebunden. Öffne den vollständigen Link aus deiner Einladung. Falls er fehlt, wende dich an die Produktion.</p>
+    <p id="activeAccount" hidden>Angemeldet als <strong id="activeAccountName"></strong></p>
+    <button id="logout" type="button">Abmelden / Konto wechseln</button>
+  </main>
+  <script>
+    (async () => {
+      try {
+        const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (typeof data.username !== 'string' || !data.username) return;
+        document.getElementById('activeAccountName').textContent = data.username;
+        document.getElementById('activeAccount').hidden = false;
+      } catch { /* The access message and logout remain available. */ }
+    })();
+    document.getElementById('logout').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await fetch('/logout', {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'X-VDO-Action': 'logout' },
+        });
+        if (!response.ok) throw new Error('Logout failed');
+        location.reload();
+      } catch {
+        button.disabled = false;
+        alert('Abmelden ist gerade nicht möglich. Bitte versuche es erneut.');
+      }
+    });
+  </script>
+</body>
+</html>

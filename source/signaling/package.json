@@ -1,0 +1,13 @@
+{
+  "name": "vdo-ninja-private-signaling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned VDO.Ninja advanced signaling server",
+  "main": "vdoninja_advanced.js",
+  "scripts": {
+    "start": "node vdoninja_advanced.js"
+  },
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

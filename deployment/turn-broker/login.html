@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Anmelden · Was weiß ich?! – Frag die anderen!</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+  <style>
+    :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; }
+    * { box-sizing: border-box; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px;
+      color: #f5f9ff; background: radial-gradient(circle at 15% 12%, #2360ae 0, transparent 37%),
+      radial-gradient(circle at 90% 84%, #542a9a 0, transparent 40%),
+      linear-gradient(145deg, #07142f, #102770 54%, #100b35); }
+    main { width: min(100%, 480px); padding: clamp(24px, 5vw, 42px);
+      border: 1px solid #45cfff; border-radius: 18px; background: rgba(7, 19, 54, .88);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .35); }
+    .show-logo { display: block; width: min(100%, 340px); height: 105px;
+      margin: 0 auto 24px; object-fit: cover; object-position: center; }
+    h1 { margin: 0 0 12px; font-size: 32px; }
+    p { margin: 0 0 24px; color: #d4e9ff; line-height: 1.5; }
+    label { display: block; margin: 16px 0 6px; font-weight: 700; }
+    input { width: 100%; padding: 13px; border: 1px solid #71cfff; border-radius: 9px;
+      color: #fff; background: #101e4b; font: inherit; }
+    input:focus-visible, button:focus-visible { outline: 3px solid #74e6ff; outline-offset: 3px; }
+    button { width: 100%; margin-top: 24px; padding: 13px; border: 0; border-radius: 11px;
+      color: #081944; background: linear-gradient(110deg, #74e6ff, #84a9ff 62%, #bd83ff);
+      font: inherit; font-weight: 800; cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    #message { min-height: 1.5em; margin: 15px 0 0; color: #ffd0dc; }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="show-logo" src="/media/show-logo.png" alt="WAS WEISS ICH?! – FRAG DIE ANDEREN!">
+    <h1>Anmelden</h1>
+    <p>Gib die Zugangsdaten für deinen persönlichen Link ein.</p>
+    <form id="loginForm">
+      <label for="username">Benutzername</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Passwort</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Anmelden</button>
+      <p id="message" role="alert" aria-live="polite"></p>
+    </form>
+    <p style="margin:20px 0 0;font-size:14px"><a href="/source/" style="color:#9fe9ff">Quellcode &amp; Lizenz (AGPL)</a></p>
+  </main>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const button = form.querySelector('button');
+      const message = document.getElementById('message');
+      button.disabled = true;
+      message.textContent = '';
+      try {
+        const response = await fetch('/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-VDO-Action': 'login' },
+          body: new URLSearchParams(new FormData(form)),
+        });
+        if (!response.ok) {
+          message.textContent = response.status === 429
+            ? 'Bitte warte kurz und versuche es erneut.' : 'Benutzername oder Passwort stimmt nicht.';
+          return;
+        }
+        if (location.pathname === '/login') location.replace('/');
+        else location.reload();
+      } catch {
+        message.textContent = 'Anmeldung gerade nicht erreichbar. Bitte versuche es erneut.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

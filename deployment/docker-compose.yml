@@ -1,0 +1,118 @@
+name: vdo-ninja
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: local/vdo-ninja-frontend:v30.2-obs-view-v2
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: 0.5
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      frontend:
+        ipv4_address: 172.30.201.178
+
+  signaling:
+    build:
+      context: ./signaling
+      dockerfile: Dockerfile
+    image: local/vdo-ninja-signaling:obs-view-v1
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    cpus: 0.5
+    mem_limit: 256m
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=16m
+    expose:
+      - "8080"
+    volumes:
+      - ./secrets/access-policy.json:/run/secrets/access-policy.json:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      frontend:
+        ipv4_address: 172.30.201.179
+
+  turn-broker:
+    build:
+      context: ./turn-broker
+      dockerfile: Dockerfile
+    image: local/vdo-ninja-turn-broker:phase2-obs-view-v1
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    cpus: 0.25
+    mem_limit: 128m
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=8m
+    expose:
+      - "8080"
+    volumes:
+      - ./secrets:/run/secrets:ro
+      - ./session-state:/run/session-state:rw
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      frontend:
+        ipv4_address: 172.30.201.180
+
+networks:
+  frontend:
+    name: vdo-ninja_frontend
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.201.176/29
+          gateway: 172.30.201.177

@@ -1,0 +1,354 @@
+/* Show styling for the whole production instance.
+   No external artwork, font, or script is loaded. */
+
+.show-guest-logo {
+  display: none;
+}
+
+#easycubeLogoutForm {
+  float: right;
+  margin: 1px 4px 0 12px;
+  text-align: right;
+}
+
+#easycubeAccount {
+  display: block;
+  margin-bottom: 4px;
+  color: #d4e9ff;
+  font: 12px Arial, Helvetica, sans-serif;
+}
+
+#easycubeAccount[hidden] { display: none; }
+#easycubeAccount strong { color: #fff; }
+
+#easycubeLogoutForm button {
+  padding: 5px 10px;
+  border: 1px solid rgba(113, 227, 255, .65);
+  border-radius: 8px;
+  color: #f5f9ff;
+  background: rgba(12, 31, 82, .8);
+  font: 700 12px Arial, Helvetica, sans-serif;
+  cursor: pointer;
+}
+
+#easycubeLogoutForm button:hover { background: rgba(35, 82, 155, .9); }
+html.show-output #easycubeLogoutForm,
+html.show-output .show-guest-logo { display: none; }
+
+html.show-theme {
+  background: #07142f;
+}
+
+html.show-theme:not(.show-output) body {
+  --background-color: #07142f;
+  --dark-background-color: #07142f;
+  --button-radius: 12px;
+  color-scheme: dark;
+  color: #f5f9ff;
+  background-color: #07142f !important;
+  background-image:
+    radial-gradient(circle at 14% 12%, rgba(41, 190, 255, .22), transparent 32%),
+    radial-gradient(circle at 89% 82%, rgba(154, 58, 255, .19), transparent 37%),
+    linear-gradient(145deg, #07142f 10%, #102770 54%, #100b35 100%) !important;
+}
+
+html.show-theme #header {
+  box-sizing: border-box;
+  padding: 5px 12px;
+  background: linear-gradient(90deg, rgba(8, 28, 80, .96), rgba(36, 19, 89, .9)) !important;
+  border-bottom: 1px solid rgba(75, 218, 255, .42);
+  box-shadow: 0 8px 28px rgba(1, 8, 30, .25);
+}
+
+html.show-theme .show-guest-logo {
+  display: inline-block;
+  vertical-align: middle;
+  width: 170px;
+  height: 50px;
+  margin: 0 14px 0 4px;
+  object-fit: cover;
+  object-position: center;
+}
+
+html.show-theme #mainmenu #container-3,
+html.show-theme #mainmenu #container-2 {
+  color: #eef7ff;
+  background: linear-gradient(155deg, rgba(24, 56, 139, .97), rgba(14, 25, 77, .98) 65%, rgba(39, 20, 94, .97)) !important;
+  border: 1px solid rgba(81, 217, 255, .46) !important;
+  border-radius: 18px;
+  box-shadow: 0 16px 45px rgba(2, 8, 32, .38), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+
+html.show-theme #mainmenu #container-2 {
+  display: none !important;
+}
+
+html.show-theme .column.card {
+  color: #eef7ff;
+  background: linear-gradient(155deg, rgba(24, 56, 139, .97), rgba(14, 25, 77, .98) 65%, rgba(39, 20, 94, .97)) !important;
+  border: 1px solid rgba(81, 217, 255, .46) !important;
+  border-radius: 18px;
+  box-shadow: 0 16px 45px rgba(2, 8, 32, .38), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+
+html.show-theme .column.card > h2,
+html.show-theme .directorBlock > h2 {
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(25, 180, 255, .28);
+}
+
+html.show-theme .column.card .container-inner {
+  color: #eef7ff;
+  background: rgba(4, 16, 51, .2);
+}
+
+html.show-theme .gobutton:enabled {
+  color: #081944 !important;
+  background: linear-gradient(110deg, #74e6ff, #84a9ff 62%, #bd83ff) !important;
+  border-color: transparent !important;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(30, 145, 255, .28);
+}
+
+html.show-theme .directorBlock {
+  border: 1px solid rgba(81, 217, 255, .35);
+  border-radius: 14px;
+}
+
+html.show-theme .column.card input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.show-theme .column.card select,
+html.show-theme .column.card textarea {
+  color: #f5f9ff;
+  background: #101e4b;
+  border: 1px solid rgba(111, 207, 255, .55);
+  border-radius: 8px;
+}
+
+html.show-theme #mainmenu #container-3 > h2,
+html.show-theme #mainmenu #container-2 > h2 {
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: .025em;
+  text-shadow: 0 2px 12px rgba(25, 180, 255, .28);
+}
+
+html.show-theme #container-3 .container-inner,
+html.show-theme #container-2 .container-inner {
+  color: #eef7ff;
+  background-color: rgba(4, 16, 51, .19);
+}
+
+html.show-theme #container-3 #videoMenu,
+html.show-theme #container-3 #audioMenu,
+html.show-theme #container-3 #headphonesDiv,
+html.show-theme #container-3 #videoSettings {
+  box-sizing: border-box;
+  color: #eef7ff;
+  background-color: #102451 !important;
+  border: 1px solid rgba(111, 207, 255, .4) !important;
+  border-radius: 10px;
+}
+
+html.show-theme #container-3 #multiselect-trigger,
+html.show-theme #container-3 #audioSource {
+  color: #eef7ff !important;
+  background-color: #152d61 !important;
+  border: 1px solid rgba(111, 207, 255, .4);
+  border-radius: 7px;
+}
+
+html.show-theme #container-3 #audioSource label,
+html.show-theme #container-3 #audioSource input:checked + label {
+  color: #eef7ff !important;
+  background-color: transparent !important;
+}
+
+/* The in-room device drawer uses different elements from the pre-join card. */
+html.show-theme #popupSelector #videoMenu3,
+html.show-theme #popupSelector #audioMenu2,
+html.show-theme #popupSelector #headphonesDiv3,
+html.show-theme #popupSelector #videoSettings3 {
+  box-sizing: border-box;
+  color: #eef7ff !important;
+  background: #102451 !important;
+  border: 1px solid rgba(111, 207, 255, .4) !important;
+  border-radius: 10px;
+}
+
+html.show-theme #popupSelector .title,
+html.show-theme #popupSelector label {
+  color: #eef7ff !important;
+}
+
+html.show-theme #popupSelector #multiselect-trigger3,
+html.show-theme #popupSelector #audioSource3 {
+  color: #eef7ff !important;
+  background: #152d61 !important;
+  border: 1px solid rgba(111, 207, 255, .4) !important;
+  border-radius: 7px;
+}
+
+html.show-theme #popupSelector #audioSource3 label,
+html.show-theme #popupSelector #audioSource3 input:checked + label {
+  color: #eef7ff !important;
+  background: transparent !important;
+}
+
+html.show-theme #popupSelector select,
+html.show-theme #popupSelector select option {
+  color: #f5f9ff !important;
+  background: #101e4b !important;
+}
+
+html.show-theme #screensharebutton,
+html.show-theme #screenshare2button,
+html.show-theme #screenshare3button {
+  display: none !important;
+}
+
+html.show-theme #previewWebcam {
+  box-sizing: border-box;
+  background-color: #020a21;
+  border: 2px solid rgba(84, 217, 255, .56);
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(2, 8, 32, .32);
+}
+
+html.show-theme #container-3 select,
+html.show-theme #container-3 input:not([type="range"]),
+html.show-theme #container-2 select {
+  color: #f5f9ff;
+  background-color: #101e4b;
+  border: 1px solid rgba(111, 207, 255, .55);
+  border-radius: 8px;
+}
+
+html.show-theme #container-3 #gowebcam:enabled {
+  color: #081944 !important;
+  background: linear-gradient(110deg, #74e6ff, #84a9ff 62%, #bd83ff) !important;
+  border: 0 !important;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(30, 145, 255, .35);
+  animation: none;
+}
+
+html.show-theme #container-3 #gowebcam:disabled {
+  border-color: rgba(118, 180, 222, .48);
+  border-radius: 12px;
+}
+
+html.show-theme #controlButtons button,
+html.show-theme #container-3 button:not(#gowebcam) {
+  border-radius: 10px;
+}
+
+/* Keep the in-room chat readable against the dark show theme. */
+html.show-theme #chatModule {
+  color: #f5f9ff;
+  background: #0c1c46 !important;
+  border: 1px solid rgba(111, 207, 255, .55) !important;
+  box-shadow: 0 16px 40px rgba(2, 8, 32, .55);
+}
+
+html.show-theme #chatModule .chat-header {
+  color: #fff;
+  background: #172b63 !important;
+  border-bottom: 1px solid rgba(111, 207, 255, .35);
+}
+
+html.show-theme #chatModule .chat-header a {
+  color: #eaf7ff;
+}
+
+html.show-theme #chatBody {
+  color: #f5f9ff;
+  background: #0a1738;
+  border-color: rgba(111, 207, 255, .35);
+}
+
+html.show-theme #chatBody .inMessage,
+html.show-theme #chatBody .outMessage,
+html.show-theme #chatBody .tipMessage {
+  padding: 8px 10px;
+  border-radius: 8px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+html.show-theme #chatBody .inMessage {
+  color: #f5f9ff;
+  background: #1d376e !important;
+}
+
+html.show-theme #chatBody .outMessage {
+  color: #fff;
+  background: #31579a !important;
+}
+
+html.show-theme #chatBody .tipMessage {
+  color: #fff;
+  background: #49306d !important;
+  border-color: #9162bc;
+}
+
+html.show-theme #chatBody i small {
+  color: #c1d7ef;
+}
+
+html.show-theme #chatBody a {
+  color: #8beaff !important;
+  background: rgba(53, 182, 221, .17) !important;
+  border-color: currentColor !important;
+}
+
+html.show-theme #chatModule .chat-input-area,
+html.show-theme #chatModule .resizer {
+  background: #12244f !important;
+}
+
+html.show-theme #chatInput {
+  color: #fff !important;
+  background: #091736 !important;
+  border: 1px solid rgba(111, 207, 255, .6) !important;
+  border-radius: 7px;
+}
+
+html.show-theme #chatInput::placeholder {
+  color: #bdd2ed;
+  opacity: 1;
+}
+
+html.show-theme #chatModule .chat-input-area button {
+  color: #fff !important;
+  background: #254a8b !important;
+  border: 1px solid rgba(111, 207, 255, .5) !important;
+  border-radius: 7px;
+}
+
+html.show-theme #chatModule .chat-input-area button:hover {
+  background: #3568b4 !important;
+}
+
+html.show-theme #languages,
+html.show-theme #translateButton {
+  display: none !important;
+}
+
+html.show-theme button:focus-visible,
+html.show-theme select:focus-visible,
+html.show-theme input:focus-visible {
+  outline: 3px solid #68deff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  html.show-theme #header {
+    padding: 4px 7px;
+  }
+
+  html.show-theme .show-guest-logo {
+    margin-right: 7px;
+    width: 128px;
+    height: 39px;
+  }
+}

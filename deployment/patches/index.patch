@@ -1,0 +1,182 @@
+--- a/index.html
++++ b/index.html
+@@ -20,6 +20,45 @@
+ 				document.write('<style>#directorlayout,#controlButtons{display:none!important}</style>');
+ 			}
+ 		</script>
++		<script>
++			// Use the show styling throughout the production instance.
++			document.documentElement.classList.add('show-theme');
++			const showParams = new URLSearchParams(window.location.search);
++			if (showParams.has('view') && !showParams.has('push')) {
++				document.documentElement.classList.add('show-output');
++			}
++		</script>
++		<script>
++			async function easycubeLogout(event) {
++				event.preventDefault();
++				const button = event.currentTarget.querySelector('button');
++				button.disabled = true;
++				try {
++					const response = await fetch('/logout', {
++						method: 'POST', credentials: 'same-origin', cache: 'no-store',
++						headers: { 'X-VDO-Action': 'logout' }
++					});
++					if (!response.ok) throw new Error('Logout failed');
++					window.location.reload();
++				} catch {
++					button.disabled = false;
++					alert('Abmelden ist gerade nicht möglich. Bitte versuche es erneut.');
++				}
++			}
++			async function easycubeShowAccount() {
++				const account = document.getElementById('easycubeAccount');
++				if (!account || document.documentElement.classList.contains('show-output')) return;
++				try {
++					const response = await fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' });
++					if (!response.ok) return;
++					const data = await response.json();
++					if (typeof data.username !== 'string' || !data.username) return;
++					document.getElementById('easycubeAccountName').textContent = data.username;
++					account.hidden = false;
++				} catch { /* Keep the page usable if the account label cannot load. */ }
++			}
++			document.addEventListener('DOMContentLoaded', easycubeShowAccount);
++		</script>
+ 		<style>
+ 			html {
+ 				background-color: #0000;
+@@ -37,48 +76,67 @@
+ 		<link rel="canonical" href="https://vdo.ninja/">
+ 		<link rel="author" href="/about" />
+ 		<link rel="me" href="https://vdo.ninja/about" />
+-		<link rel="manifest" href="manifest.json">
++		<link rel="manifest" href="/manifest.json">
+ 		
+ 		<!-- Primary Meta Tags -->
+-		<title>VDO.Ninja</title>
+-		<meta id="metaTitle" name="title" content="VDO.Ninja" />
++		<title>Was weiß ich?! – Frag die anderen!</title>
++		<meta id="metaTitle" name="title" content="Was weiß ich?! – Frag die anderen!" />
++		<script>
++			// Keep the show name in the tab when VDO.Ninja sets a role or room title.
++			const showTabTitle = 'Was weiß ich?! – Frag die anderen!';
++			const showTitleNode = document.querySelector('title');
++			function updateShowTabTitle() {
++				const current = showTitleNode.textContent.trim();
++				const suffix = ' · ' + showTabTitle;
++				let next = showTabTitle;
++				if (!document.documentElement.classList.contains('show-output') &&
++					current && current !== showTabTitle && current !== 'VDO.Ninja' && current !== 'RTC.Ninja') {
++					const label = current.endsWith(suffix) ? current.slice(0, -suffix.length) : current;
++					next = label + suffix;
++				}
++				if (showTitleNode.textContent !== next) showTitleNode.textContent = next;
++			}
++			new MutationObserver(updateShowTabTitle).observe(showTitleNode, { childList: true, characterData: true, subtree: true });
++			updateShowTabTitle();
++		</script>
+ 		<meta name="description" content="Bring live video from your smartphone, computer, or friends directly into your Studio. 100% free." />
+ 		<meta name="author" content="Steve Seguin" />
+ 		
+ 		
+ 		<meta name="msapplication-TileColor" content="#da532c" />
+-		<meta name="theme-color" content="#0f131d" />
++		<meta name="theme-color" content="#10224d" />
+ 		<link rel="stylesheet" href="./main.css?ver=4040" />
+ 		<script type="text/javascript" crossorigin="anonymous" src="./thirdparty/adapter.js"></script>
+ 		
+-		<link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon" />
+-		<link id="favicon1" rel="icon" type="image/png" sizes="32x32" href="./media/favicon-32x32.png" />
+-		<link id="favicon2" rel="icon" type="image/png" sizes="16x16" href="./media/favicon-16x16.png" />
+-		<link id="favicon3" rel="icon" href="./media/favicon.ico" />
++		<link rel="shortcut icon" href="/favicon.ico?v=2" type="image/x-icon" />
++		<link id="favicon1" rel="icon" type="image/x-icon" sizes="32x32" href="/favicon.ico?v=2" />
++		<link id="favicon2" rel="icon" type="image/x-icon" sizes="16x16" href="/favicon.ico?v=2" />
++		<link id="favicon3" rel="icon" type="image/x-icon" href="/favicon.ico?v=2" />
+ 		<link id="thumbnailUrl" itemprop="thumbnailUrl" href="./media/vdoNinja_logo_full.png" />
+ 		<link rel="alternate" type="text/markdown" href="/rawdoc.md" title="Developer and User Documentation">
+ 
+ 		<!-- X (Twitter) Card Tags -->
+ 		<meta name="twitter:card" content="summary_large_image">
+ 		<meta name="twitter:creator" content="@SteveSeguin">
+-		<meta name="twitter:title" content="VDO.Ninja">
++		<meta name="twitter:title" content="Was weiß ich?! – Frag die anderen!">
+ 		<meta name="twitter:description" content="Bring live video from your smartphone, computer, or friends directly into OBS Studio or other. 100% free.">
+ 		<meta name="twitter:image" content="https://vdo.ninja/media/vdoNinja_logo_full.png">
+ 		
+ 		<!-- Open Graph Tags (also used by X) -->
+ 		<meta property="og:type" content="website">
+ 		<meta property="og:url" content="https://vdo.ninja/">
+-		<meta property="og:title" content="VDO.Ninja">
++		<meta property="og:title" content="Was weiß ich?! – Frag die anderen!">
+ 		<meta property="og:description" content="Bring live video from your smartphone, computer, or friends directly into OBS Studio or other. 100% free.">
+ 		<meta property="og:image" content="https://vdo.ninja/media/vdoNinja_logo_full.png">
+ 		<meta property="og:image:width" content="1200">
+ 		<meta property="og:image:height" content="630">
+-		<meta property="og:site_name" content="VDO.Ninja">
++		<meta property="og:site_name" content="Was weiß ich?! – Frag die anderen!">
+ 
+ 		<style id="lightbox-animations" type="text/css"></style>
+ 		
+ 		<!-- Authentication styles -->
+ 		<link rel="stylesheet" href="auth-styles.css">
++		<link rel="stylesheet" href="./show-theme.css?ver=7">
+ 
+ 	</head>
+ 	<body id="main" class="main hidden" onload="main()">
+@@ -95,12 +153,17 @@
+ 		<input id="zoomSlider" type="range" style="display: none;" />
+ 		<span id="electronDragZone" style="display:none;pointer-events: none; z-index:-10; position:absolute;top:0;left:0;width:100%;height:2%;min-height:20px;"></span>
+ 		<div id="header">
++			<img class="show-guest-logo" src="./media/show-logo.png" alt="WAS WEISS ICH?! – FRAG DIE ANDEREN!">
+ 			
+ 			<a id="logoname" href="./" style="text-decoration: none; color: white; margin: 0 2px 0px 8px;">
+ 				<span data-translate="logo-header">
+ 					<span id="qos">V</span>DO.Ninja 
+ 				</span>
+ 			</a>
++			<form id="easycubeLogoutForm" method="post" action="/logout" onsubmit="easycubeLogout(event)">
++				<span id="easycubeAccount" hidden>Angemeldet als <strong id="easycubeAccountName"></strong></span>
++				<button type="submit">Abmelden</button>
++			</form>
+ 			<div id="head1">
+ 				<input type="text" autocorrect="off" autocapitalize="none" id="joinroomID" name="joinroomID" tabindex="1" size="22" placeholder="Join by Room Name here" alt="Enter a room name to join" title="Enter a room name to quick join" onkeyup="jumptoroom(event)"/>
+ 				<button onclick="jumptoroom();" id='jumptoroomButton' role="button" aria-pressed="false" tabindex="1" alt="Join room" title="Join room" >GO</button>
+@@ -3267,10 +3330,10 @@
+ 			
+ 			
+ 			///////////////  ------  Custom basic TURN SETUP SECTION STARTS Here --------
+-			// session.configuration = {         // uncomment to disable the default usage of the vdo.ninja turn servers.
+-			//	iceServers: session.stunServers,
+-			//	sdpSemantics: session.sdpSemantics
+-			// };
++			session.configuration = {
++				iceServers: session.stunServers,
++				sdpSemantics: session.sdpSemantics
++			};
+ 			// var turn = {}; // Just an example entry for a basic TURN server 
+ 			// turn.username = "steve";
+ 			// turn.credential = "justtesting";
+@@ -3330,8 +3393,8 @@
+ 			// session.wss = "wss://wss.vdo.ninja:443"; // US-East (Default)
+ 
+ 			//  If wanting to fully-self-host, uncomment the following and deploy your own websocket server; good for air-gapped deployments
+-			// session.wss = "wss://wss.yourdomainhere.com:443"; // https://github.com/steveseguin/websocket_server 
+-			// session.customWSS = true;
++			session.wss = "wss://video.easy-cube.de/ws";
++			session.customWSS = false;
+ 			//////
+ 			
+ 			///// The following lets you set the defaults
+@@ -3432,8 +3495,9 @@
+ 				</script>
+ 
+ 		<script type="text/javascript" crossorigin="anonymous" id="lib-js" src="./lib.js?ver=1413"></script>
+-		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1063"></script>
++		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1064"></script>
+ 		<script type="module" src="./podcast/bootstrap.js"></script>
++		<a href="/source/signaling/" style="position:fixed;bottom:4px;left:8px;z-index:2;color:#aaa;font-size:11px;" rel="license">Signaling source (AGPL)</a>
+ 		
+ 	</body>
+ </html>

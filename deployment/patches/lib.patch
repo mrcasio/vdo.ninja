@@ -1,0 +1,29 @@
+--- a/lib.js
++++ b/lib.js
+@@ -469,8 +469,13 @@
+ 	}
+ }
+ 
+-function changeParam(url, paramName, paramValue) {
+-	paramName = paramName.replace("?", "");
++function changeParam(url, paramName, paramValue) {
++	var hashIndex = url.indexOf("#");
++	var fragment = hashIndex === -1 ? "" : url.substring(hashIndex);
++	if (hashIndex !== -1) {
++		url = url.substring(0, hashIndex);
++	}
++	paramName = paramName.replace("?", "");
+ 	var qind = url.indexOf("?");
+ 	url = url.replace("?", "&");
+ 	var params = url.substring(qind + 1).split("&");
+@@ -501,8 +506,8 @@
+ 			query = query + "&" + name + value;
+ 		}
+ 	}
+-	return url.substring(0, qind) + query;
+-}
++	return url.substring(0, qind) + query + fragment;
++}
+ 
+ function saveRoom(ele) {
+ 	//this.title = "Quick load settings stored locally";

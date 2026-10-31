@@ -1,3 +1,13 @@
+# Production source release — easyCube
+
+This fork publishes the source corresponding to the modified VDO.Ninja deployment. Release branch: `codex/production-2026-10-31`. It is based on upstream commit `d5a8b5669d1cb0ff75f984499f7025b745657808` (v30.2), without upgrading the running media implementation.
+
+See [MODIFICATIONS.md](MODIFICATIONS.md), [deployment instructions](deployment/README.md), [AGPL-3.0](AGPLv3.md), and [source offer](source/index.html). All first-party software additions in this release are offered under AGPL-3.0. Third-party licenses and separately owned show branding are preserved; no trademark rights or official endorsement are granted.
+
+No production invitation links, room/stream identifiers, passwords, TURN credentials, sessions, private project history or customer applications are included. The default frontend password in index.html is upstream application code, not an account password. Deployments must supply their own runtime configuration.
+
+---
+
 
 <img src="https://github.com/user-attachments/assets/8134f167-2ea5-42e8-9450-b7aed322b6b0" width="300" />
 
