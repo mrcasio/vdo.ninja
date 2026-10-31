@@ -1,4 +1,4 @@
-/* Modified by easyCube, 2026-09-24 through 2026-10-31. Distributed under AGPL-3.0. See MODIFICATIONS.md and AGPLv3.md. */
+/* Modified by easyCube, 2026-09-24 through 2026-11-01. Distributed under AGPL-3.0. See MODIFICATIONS.md and AGPLv3.md. */
 'use strict';
 
 const fs = require('node:fs');
@@ -8,6 +8,7 @@ const { createHash, timingSafeEqual, randomBytes, pbkdf2 } = require('node:crypt
 const { promisify } = require('node:util');
 const { participant, rotatable, CredentialStore, RateLimiter, atomicJSON } = require('./access-manager');
 const path = require('node:path');
+const { Navigation } = require('./navigation');
 
 const port = Number(process.env.PORT || 8080);
 const ttlSeconds = 10800;
@@ -24,6 +25,7 @@ const loginPagePath = process.env.LOGIN_PAGE || '/app/login.html';
 const sessionLifetime = 24 * 60 * 60 * 1000;
 const credentials = new CredentialStore(passwordHashesPath, process.env.CREDENTIAL_OVERRIDES || path.join(path.dirname(sessionFile), 'credentials.json'));
 const adminPagePath = process.env.ADMIN_PAGE || '/app/production-access.html';
+const homePagePath = process.env.HOME_PAGE || '/app/home.html';
 const authAttempts = new RateLimiter(10, 40);
 let passwordChecks = 0;
 let rotationBusy = false;
@@ -51,6 +53,8 @@ if (shortlinks.version !== 1 || !shortlinks.links || typeof shortlinks.links !==
 const obsViewers = JSON.parse(fs.readFileSync(obsViewersPath, 'utf8'));
 if (obsViewers.version !== 1 || !obsViewers.links || typeof obsViewers.links !== 'object' ||
     Array.isArray(obsViewers.links)) throw new Error('OBS viewer map is missing or invalid');
+
+const navigation = new Navigation({ origin: allowedOrigin, getPolicy: policy, links: shortlinks.links, viewers: obsViewers.links, allowEntry });
 
 function obsViewer(token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(token)) return null;
@@ -453,7 +457,43 @@ async function productionAccess(req, res) {
   } finally { rotationBusy = false; }
 }
 
+function serveLogin(res) {
+  const page = fs.readFileSync(loginPagePath);
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+  });
+  return res.end(page);
+}
+function redirectTo(res, target) {
+  const url = new URL(target, allowedOrigin);
+  if (!target.startsWith('/') || target.startsWith('//') || url.origin !== allowedOrigin || /[\r\n]/.test(target)) throw new Error('Unsafe navigation target');
+  res.writeHead(302, { Location: target, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
+  res.end();
+}
+function accountNavigation(req, res) {
+  if (req.method !== 'GET') return send(res, 405, { error: 'Use GET' });
+  const username = currentSession(req);
+  if (!username) return req.url === '/home' || req.url.startsWith('/launch/') ? serveLogin(res) : send(res, 401, { error: 'Login required' });
+  if (req.url.startsWith('/launch/')) {
+    const route = /^\/launch\/director\/(test|staging|production)$/.exec(req.url);
+    if (!route) return send(res, 404, { error: 'Not found' });
+    const target = navigation.director(username, route[1]);
+    return target ? redirectTo(res, target) : send(res, 403, { error: 'This account cannot open that Director page.' });
+  }
+  const info = navigation.home(username);
+  if (req.url === '/api/navigation') return send(res, 200, info);
+  if (info.default !== '/home') return redirectTo(res, info.default);
+  res.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+  });
+  res.end(fs.readFileSync(homePagePath));
+}
+
 async function handleRequest(req, res) {
+  if (req.url === '/home' || req.url === '/api/navigation' || req.url?.startsWith('/launch/')) return accountNavigation(req, res);
   if (req.url === '/health' && req.method === 'GET') return send(res, 200, { ok: true });
   if (req.url === '/internal/active-sessions' && req.method === 'GET') {
     const active = {};
@@ -560,14 +600,7 @@ async function handleRequest(req, res) {
   }
   if ((req.url === '/internal/login-page' || req.url === '/login') && req.method === 'GET') {
     try {
-      const page = fs.readFileSync(loginPagePath);
-      res.writeHead(200, {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'",
-      });
-      return res.end(page);
+      return serveLogin(res);
     } catch {
       return send(res, 503, { error: 'Login unavailable' });
     }

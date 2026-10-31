@@ -63,7 +63,8 @@
       if (!data.canManageProductionAccess) return;
       const link = document.createElement('a'); link.href = '/production-access'; link.target = '_blank'; link.rel = 'noopener';
       link.textContent = 'Zugänge verwalten'; link.style.cssText = 'color:#a4efff;margin:0 12px;font:14px system-ui';
-      document.getElementById('easycubeLogoutForm')?.prepend(link);
+      const home = document.createElement('a'); home.href = '/home'; home.target = '_blank'; home.rel = 'noopener'; home.textContent = 'Übersicht'; home.style.cssText = link.style.cssText;
+      document.getElementById('easycubeLogoutForm')?.prepend(home, link);
     } catch { /* Core room UI remains usable if the account service is unavailable. */ }
   });
 })();

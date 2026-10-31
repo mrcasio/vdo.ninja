@@ -21,3 +21,9 @@ The nginx auth subrequest forwards the hashed session identifier to the private 
 Reload all participant/Director pages and OBS browser sources once after deployment so receiver-side media revocation is active. Normal device changes remain supported: the latest login wins, and an older page cannot automatically reclaim that login. A person who still knows an unchanged password can log in again; rotate credentials after each event. Password rotation does not revoke already-issued third-party TURN credentials before their provider TTL.
 
 Run the integration test with Node 24 and ws available on NODE_PATH: node deployment/tests/access-security.integration.js. It spawns only loopback fixture servers, uses generated temporary secrets, and removes them afterward.
+
+## Default destinations and Production overview
+
+Visiting the bare HTTPS domain routes through /home. Without a current session this serves the existing login form. After login, Host/Creator/Joker/return co-director accounts follow their existing personal shortlink. Production stays on the selection page with Test/Staging/Production main Director and Production-Talk entries, plus password administration. Existing explicit invitation and OBS viewer URLs retain their behavior. OBS collection accounts have a room-scoped source overview.
+
+The broker serves /home, /api/navigation and /launch/director/{test,staging,production}. It reads only the existing private policy/shortlink/viewer maps, verifies a current session itself and checks the original entry policy before resolving a target. Nginx adds these application routes and a query-free root redirect; no new port, Docker network, account or secret file is required. home.html and navigation.js must be copied into the broker image. Restart only frontend and turn-broker, then test and gracefully reload Nginx; signaling does not need to restart.

@@ -22,7 +22,7 @@ function processServer(file,env){
   const child=spawn(process.execPath,[file],{env:{...process.env,...env},stdio:['ignore','pipe','pipe']});
   let logs='';child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);child.logs=()=>logs;return child;
 }
-const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html'};
+const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html',HOME_PAGE:root+'/turn-broker/home.html'};
 async function ready(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Server startup failed');}
 async function api(url,{cookie,method='GET',body,headers={}}={}){
   return fetch(brokerURL+url,{method,redirect:'manual',headers:{Origin:origin,...(cookie?{Cookie:cookie}:{}),...headers},...(body!==undefined?{body}:{} )});
@@ -51,7 +51,33 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
 (async()=>{
   broker=processServer(root+'/turn-broker/server.js',env);await ready(brokerURL+'/health');
   signaling=processServer(root+'/signaling/vdoninja_advanced.js',{PORT:String(signalingPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:env.ACCESS_POLICY,AUTH_BROKER_URL:brokerURL});await ready('http://127.0.0.1:'+signalingPort+'/');
+  const welcome=await api('/home');assert.equal(welcome.status,200);assert.ok((await welcome.text()).includes('loginForm'));
+  assert.equal((await api('/api/navigation')).status,401);
+  for(const [username,account] of Object.entries(fixture.policy.accounts)) {
+    if(username==='Production') continue;
+    const ownCookie=await login(username);
+    const ownHome=await api('/home',{cookie:ownCookie});
+    const nav=await (await api('/api/navigation',{cookie:ownCookie})).json();
+    assert.equal(nav.username,username);
+    if(account.role==='obs') {
+      assert.equal(ownHome.status,200);assert.equal(nav.sections.length,1);assert.equal(nav.sections[0].links.length,15);
+      for(const item of nav.sections[0].links) {const token=item.href.slice('/obs/'.length);assert.equal(fixture.policy.accounts[fixture.viewers[token].participant].room,account.room);}
+    } else {
+      assert.equal(ownHome.status,302);const target=ownHome.headers.get('location');assert.equal(fixture.shortlinks[target.slice('/l/'.length)].username,username);assert.equal(nav.default,target);
+    }
+    assert.equal((await api('/launch/director/production',{cookie:ownCookie})).status,403);
+  }
   const production=await login('Production');const production2=await login('Production');
+  const productionHome=await api('/home',{cookie:production});assert.equal(productionHome.status,200);assert.ok((await productionHome.text()).includes('api/navigation'));
+  const portal=await (await api('/api/navigation',{cookie:production})).json();assert.equal(portal.sections.length,4);assert.equal(portal.default,'/home');
+  for(const name of ['test','staging','production']) {
+    const launch=await api('/launch/director/'+name,{cookie:production});assert.equal(launch.status,302);
+    const target=new URL(launch.headers.get('location'),origin);assert.equal(target.searchParams.get('director'),fixture.policy.rooms[name].id);assert.equal(target.searchParams.get('nopush'),'');
+    const fragment=new URLSearchParams(target.hash.replace(/^#\??/,''));assert.equal(fragment.get('turnkey'),fixture.keys.Production);assert.equal(fragment.get('codirector').length,28);
+    const authorized=await api('/internal/authorize-entry',{headers:{'X-Authenticated-User':'Production','X-Original-URI':launch.headers.get('location')}});assert.equal(authorized.status,204);
+  }
+  assert.equal((await api('/api/navigation?username=Production')).status,404);
+
   assert.equal((await identity(production)).status,204,'Production retains multiple sessions');
   const admin=await api('/api/production-access',{cookie:production});assert.equal(admin.status,200);const list=await admin.json();assert.equal(list.accounts.length,14);assert.ok(!list.accounts.some(x=>['Host','Production'].includes(x.username)));
   const guestCookie=await login('JokerC1_01');const guest=await connect('JokerC1_01',guestCookie);
@@ -105,5 +131,5 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   assert.equal((await identity(expireCookie)).status,401);assert.equal((await identity(production)).status,204);assert.equal((await identity(stagingCookie)).status,204);
   assert.equal(director.ws.readyState,WebSocket.OPEN);assert.equal(staging.ws.readyState,WebSocket.OPEN);
   const invalidAfterRestart=await api('/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-VDO-Action':'login','X-Real-IP':'restart-test'},body:new URLSearchParams({username:'Creator02',password:fixture.password}).toString()});assert.equal(invalidAfterRestart.status,401);
-  console.log('PASS: latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash-only storage; logout/expiry; durable overrides; flood isolation.');
+  console.log('PASS: all 52 scoped home routes; Production portal/Director launch authorization; latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash-only storage; logout/expiry; durable overrides; flood isolation.');
 })().catch(async error=>{console.error(error.stack);if(broker)console.error(broker.logs());if(signaling)console.error(signaling.logs());process.exitCode=1;}).finally(async()=>{peers.forEach(p=>p.ws.terminate());await stop(signaling);await stop(broker);fs.rmSync(tmp,{recursive:true,force:true});});

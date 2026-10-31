@@ -1,6 +1,6 @@
 # Modification notice
 
-Modified by easyCube between 2026-09-24 and 2026-10-31.
+Modified by easyCube between 2026-09-24 and 2026-11-01.
 Frontend base: steveseguin/vdo.ninja d5a8b5669d1cb0ff75f984499f7025b745657808.
 Signaling base: steveseguin/websocket_server 92d9bce4f8c798b520cfd2781d6f7f8ae607b3fb.
 
@@ -21,3 +21,11 @@ WebSocket upgrades verify the authenticated session with the private broker; a o
 Updated room/OBS browser pages close revoked peer connections and stop stale automatic reconnects. All browser/OBS pages must be reloaded once after deployment to load this enforcement code. Previously issued third-party TURN credentials retain their provider TTL; they are not revoked by a website password change. The receiver-side teardown applies to this browser deployment.
 
 Tests in deployment/tests use synthetic credentials and isolated loopback servers. No live credentials are included.
+
+## Account navigation, 2026-11-01
+
+An authenticated visit to the bare site root (including /index and /index.html without a query) now opens an account-scoped home. Fixed Host, Creator, Joker and return co-director accounts are redirected to their existing unique personal shortlink. No invitation, password or media settings change. Explicit participant, Director and OBS links continue to use the existing strict entry authorization.
+
+Production receives a selection page with its three authorized main Director entries (without a return publisher), three existing Production-Talk entries and password administration. Director launch URLs are derived on the server from private room/shortlink configuration and validated with the existing entry policy. Only the Production session can resolve them. The three OBS collection accounts receive their own room's fifteen camera sources. Navigation requires a current cookie session; no private links are embedded in source or the unauthenticated login page. The Production toolbar and access administration include a link back to this overview.
+
+Integration tests cover all 52 scoped home routes, source-account restrictions, all Production Director launches and authentication failures, alongside the preceding security tests.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "https://github.com/mrcasio/vdo.ninja/tree/codex/access-security-2026-10-31",
+  "source": "https://github.com/mrcasio/vdo.ninja/tree/codex/login-navigation-2026-11-01",
   "files": {
     "src/devices.css": "009dcef6eeb1a2c5fe3df6edfbd175dece2ea81793ca771bb29e272f61fc70fc",
     "src/director-messenger.html": "b53a0b201d0f87a9227e2ac70e757c9b88010ced152a80fc28303e73cfa241c6",
@@ -16,7 +16,7 @@
     "src/favicon.ico": "aa7fd9d5cbef4a302f5d2c3e3139c626ff25ec25758585a61bd50444cd19c684",
     "src/stats.html": "50a7f4ad86cc66979b11b072204d4b445552c3b001d4e03534eae1040c9fbdc8",
     "src/midiconfig.html": "f7aaffeec5d83445ddc97b09a2b03014260cdffa17bb1e306a1626c0249e5075",
-    "src/index.html": "beb5969a0843b01c83ee3db7e28b9ac212fded19178ad984595d450bd899f0bc",
+    "src/index.html": "f997e21b5d1de130b5e983789f760cb027794c393fc0b5f23fb4afefb9590b33",
     "src/codeccomparison.html": "f67d1916d8567e8ac3986b4a0c30ce66e44ce48482809ca1a654ccaac245b762",
     "src/fonts.html": "a20cb76a225ec61f6fcd5aec162ff25aaa322653c153100a87a7a60021058f10",
     "src/LICENSE": "db1a87ba81e885b6bb82971964ab4e202463cde2ac4003571bc5a857d577e4a3",
@@ -56,7 +56,7 @@
     "src/urlencode.html": "62a9ffdd0157c7a1195c8417e2ae3f7001832b52493bade28b92e4ba64c80a0e",
     "src/AGPLv3.md": "db1a87ba81e885b6bb82971964ab4e202463cde2ac4003571bc5a857d577e4a3",
     "src/changepassword.html": "a4def3d4eb963341c62cf77212b26698ce63b9150fc315bb4b3cfefe36b75a61",
-    "src/README.md": "939b437e4e0992f709dafa88f780aa8496d3238a29c02c883a9dad484d9d9323",
+    "src/README.md": "b64a952c77ef4bc8f1ad8a4aec682a526f111b5367b04349caf9b2809eb43470",
     "src/plugin.html": "ce11149021d56977e3d8360fa3af2216c20cbea49699d37725ce94251fd6a9ee",
     "src/turnsetup.sh": "131c5b656a6512e1e3c45024b7ab1afdfc4fb2b63e52c006531896cb7144d707",
     "src/cloudflare.html": "e5c204cf992c52ef39e074f23ccc47595f8cf838d4509770853fd06e2730818a",
@@ -78,7 +78,7 @@
     "src/manifest.json": "7a7e469b9e02637a0b5bf4eec5879d483512794404954782fd2272e26a7d0308",
     "src/refresh.css": "b0a078dec2603853e9a4c5920ec4054263153a33aafa0d67f4de549233a58c49",
     "src/codecs.html": "abea92748eedac21aec749f093707180b250eb7b24599f8dd6093fb9af2b466d",
-    "src/access-session.js": "8dc74f2ea7c6b150a19fac86be21673758e59e66c81cd900e528962916728902",
+    "src/access-session.js": "3c1983a0d7a3597e14597240cd8a290bd9b144bcfa34a72ffbe04b593c88c0d9",
     "src/serviceWorker.js": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
     "src/teleprompt.html": "20bb6ab5731bcf181382bcaa3c186b6374168887b706df6114b8fd37e1066b74",
     "src/remotemidi.html": "fa68c40b49b9559d95b84acc6fa9037bd6f4e0e0d61dc3a4a4caa5c1d1aac7ea",
@@ -90,7 +90,7 @@
     "src/dropbox-auth.html": "ecb475b1e379eeb86a04ef39440abad7416e68dbf5c9dfeeae41d7be98d5727a",
     "src/meet.html": "6f56ec892faf227506f1592043b7ce0b736c5c917b85e09248966a44bb43a2b5",
     "src/docs.html": "5321868ccd6109db2f542b70b271a021072c05664a33363ea5cd7e505735cbcb",
-    "src/MODIFICATIONS.md": "9861fce47bf2cae3a1ef699ef3963157ebc0b792c7051be1d327535af019b9c4",
+    "src/MODIFICATIONS.md": "5552674628e32af3cb372f37f9d4bf49ca132e8b5ff0095082898923972d175a",
     "src/h265.html": "d69bcd2de174712797c5c3f6c346b5439b664385cc449fd4c37d302ed7e3a7eb",
     "src/voice.xml": "6077fc5fb51ccb81e7b48a9a4d8e9f92040d2dc756ce9f466f1013f3285fc701",
     "src/monitor.html": "3e200422332a519ff89144ae33f5ea2914190453f05086bf82c258b5d8eeb628",
@@ -126,7 +126,7 @@
     "src/images/hd.svg": "bd3f76060b8fdd6ce0ff0b601d6bc79cbb42b2141044f9ad95ae7664691530d4",
     "src/images/old_logo.png": "61c74b5bdf5eb46df484303f20673246147a6e261646070f6f5fc10355aabb12",
     "src/images/favicon-32x32.png": "e1605e7fe5ffb11be1fe3d34fde72c33b8ff1b5aec158ff707fd0141faa562cd",
-    "src/source/index.html": "5ed81f0882784bd7a8eaed90721657aba34ffd4222733c6484c6045398198dec",
+    "src/source/index.html": "7444232cf2fe3581ce8ddf1127a3d4216fed13686825f0293f75dbde4efb6ed9",
     "src/source/LICENCE.md": "1ee785a3ee66a14994477e0212a4d6dc753000a218308283371448b378008e96",
     "src/source/AGPLv3.md": "db1a87ba81e885b6bb82971964ab4e202463cde2ac4003571bc5a857d577e4a3",
     "src/obs/index.html": "92eae921a3a91ffae6b7a0e2d6da5441dafcef044a2c170239b9b36c77883541",
@@ -573,10 +573,12 @@
     "signaling/Dockerfile": "c7fc1f5d7e35e8b2c4b7a87cbac74d61f890db5577c8061e3b6b519892bea83f",
     "signaling/package.json": "5976648f7c1d91ce73a3c348ca652f9d79bc6bbd0b2709bff052651a5d10cd48",
     "signaling/package-lock.json": "f1c761b0dafa7228a4b83d750a6acf5c7d03d58e05ee8d4224404b7ffa01ce26",
-    "turn-broker/server.js": "100d158418384b525f843ab85a76d33740072f5f0bc0cd03a03705da0c718679",
+    "turn-broker/server.js": "4ac0087cefe60c960e6e36f53ce174ce6f4474f1bb7c6ae7bae5c7731dc16e9c",
     "turn-broker/login.html": "de1cef0eb8c23880ded732512f44227ea66f18ffae53f78df3424c2e095b7975",
-    "turn-broker/Dockerfile": "dab6a6bcf35fb91e27bd716b552e69366b22ba9e97867f545bfcc7d4d45a2322",
+    "turn-broker/Dockerfile": "62a638af4979dac3229c8a19b3f0cdf52453064a5c9c24b1d8d5f6617c16b29b",
     "turn-broker/access-manager.js": "603179b8068e272497414f45a5a3d4c5511afadb2ce7fdcbe6799e5accff8024",
-    "turn-broker/production-access.html": "62a1944c1e475844461c1c8459ce8bd6c70fc70b1796fc6704e6fb921a516429"
+    "turn-broker/production-access.html": "84fac3bca7ee045867c471a9341de83569de45948fe06fb39f0667c62cabe091",
+    "turn-broker/navigation.js": "a6becb1a98a3457beba875f3dc72a06d34a27f56db2746ca3f294425f44a650f",
+    "turn-broker/home.html": "55167f617cb810d0d1582d78214cc1300d35c9840c68187d79f53950329c4e11"
   }
 }

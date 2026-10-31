@@ -1,8 +1,10 @@
 # Production source release — easyCube
 
-This fork publishes the source corresponding to the modified VDO.Ninja deployment. Release branch: `codex/access-security-2026-10-31`. It is based on upstream commit `d5a8b5669d1cb0ff75f984499f7025b745657808` (v30.2), without upgrading the running media implementation.
+This fork publishes the source corresponding to the modified VDO.Ninja deployment. Release branch: `codex/login-navigation-2026-11-01`. It is based on upstream commit `d5a8b5669d1cb0ff75f984499f7025b745657808` (v30.2), without upgrading the running media implementation.
 
 Production can now renew only the twelve Production-Joker and two Creator passwords at `/production-access`. Host, Production and Director credentials are preserved. Guest/Creator device changes use latest-login-wins, with receiver-side peer teardown and message flood isolation.
+
+Login through the bare site domain now opens the account’s existing personal destination. Production has a scoped room/Talk/access-management overview at `/home`; OBS collection accounts have their own source overview.
 
 See [MODIFICATIONS.md](MODIFICATIONS.md), [deployment instructions](deployment/README.md), [AGPL-3.0](AGPLv3.md), and [source offer](source/index.html). All first-party software additions in this release are offered under AGPL-3.0. Third-party licenses and separately owned show branding are preserved; no trademark rights or official endorsement are granted.
 
