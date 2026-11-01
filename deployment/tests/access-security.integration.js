@@ -22,7 +22,7 @@ function processServer(file,env){
   const child=spawn(process.execPath,[file],{env:{...process.env,...env},stdio:['ignore','pipe','pipe']});
   let logs='';child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);child.logs=()=>logs;return child;
 }
-const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html',HOME_PAGE:root+'/turn-broker/home.html',ACCOUNT_EXPORT_FILE:tmp+'/secrets/account-export.json'};
+const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html',HOME_PAGE:root+'/turn-broker/home.html',ACCOUNT_EXPORT_FILE:tmp+'/secrets/account-export.json',PASSWORD_EXPORT_KEY_FILE:tmp+'/secrets/password-export.key'};
 async function ready(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Server startup failed');}
 async function api(url,{cookie,method='GET',body,headers={}}={}){
   return fetch(brokerURL+url,{method,redirect:'manual',headers:{Origin:origin,...(cookie?{Cookie:cookie}:{}),...headers},...(body!==undefined?{body}:{} )});
@@ -48,8 +48,10 @@ async function connect(username,cookie){
 async function closed(peer){if(peer.ws.readyState===WebSocket.CLOSED)return;await Promise.race([new Promise(r=>peer.ws.once('close',r)),new Promise((_,reject)=>setTimeout(()=>reject(Error('Connection not revoked')),4500))]);}
 async function rotate(cookie,usernames){return api('/api/production-access/rotate',{cookie,method:'POST',headers:{'Content-Type':'application/json','X-VDO-Action':'rotate-production-access'},body:JSON.stringify({usernames,confirm:'ROTATE_PRODUCTION'})});}
 async function download(cookie, name, headers={'X-VDO-Action':'download-access-list'}) { return api('/api/production-access/export/'+name,{cookie,method:'POST',headers}); }
+async function renewLegacy(cookie,headers={'Content-Type':'application/json','X-VDO-Action':'renew-legacy-exports'}){return api('/api/production-access/renew-legacy',{cookie,method:'POST',headers,body:JSON.stringify({confirm:'RENEW_LEGACY_EXPORTS'})});}
 async function stop(child){if(!child||child.exitCode!==null)return;child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));}
 (async()=>{
+  await require('./credential-export.test').testCredentialExport(env.PASSWORD_HASHES);
   broker=processServer(root+'/turn-broker/server.js',env);await ready(brokerURL+'/health');
   signaling=processServer(root+'/signaling/vdoninja_advanced.js',{PORT:String(signalingPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:env.ACCESS_POLICY,AUTH_BROKER_URL:brokerURL});await ready('http://127.0.0.1:'+signalingPort+'/');
   const welcome=await api('/home');assert.equal(welcome.status,200);assert.ok((await welcome.text()).includes('loginForm'));
@@ -120,13 +122,14 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   }
   for(const [token,entry] of Object.entries(fixture.viewers)) {const r=await api('/obs/'+token);assert.equal(r.status,302);assert.equal(r.headers.get('location'),entry.path);}
   assert.equal((await api('/api/production-access',{cookie:newCookie})).status,403);
+  assert.equal((await renewLegacy(newCookie)).status,403,'legacy renewal is Production-only');
   assert.equal((await api('/api/production-access',{headers:{'X-Authenticated-User':'Production'}})).status,403,'identity header alone cannot administer');
   for(const user of ['Host','Production','StagingCreator01','TestJokerC1_01','ProductionDirector']) assert.equal((await rotate(production,[user])).status,400,'protected '+user);
   assert.equal((await api('/api/production-access/rotate',{cookie:production,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usernames:['Creator01'],confirm:'ROTATE_PRODUCTION'})})).status,403,'action header required');
   const changed=await rotate(production,['JokerC1_01','Creator01']);assert.equal(changed.status,200);const changedData=await changed.json();assert.equal(changedData.credentials.length,2);
   const rotatedExport=await (await download(production,'production')).text();
-  assert.equal((rotatedExport.match(/Passwort: NICHT ERNEUT AUSLESBAR/g)||[]).length,2);
-  assert.ok(!rotatedExport.includes(changedData.credentials[0].password));
+  assert.equal((rotatedExport.match(/Passwort: NICHT ERNEUT AUSLESBAR/g)||[]).length,0);
+  for(const item of changedData.credentials)assert.ok(rotatedExport.includes('Passwort: '+item.password),'current reset passwords are exportable');
   const block=rotatedExport.split('[JokerC1_01]')[1].split('\n\n')[0];assert.ok(!block.includes(fixture.password),'obsolete password must never be exported');
   assert.ok(!(await (await download(production,'staging')).text()).includes('NICHT ERNEUT AUSLESBAR'));
   await closed(reloaded);await closed(creator);
@@ -143,6 +146,21 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   await closed(noisy);assert.equal(director.ws.readyState,WebSocket.OPEN);assert.equal(staging.ws.readyState,WebSocket.OPEN);
   const allNames=list.accounts.map(x=>x.username);const allChanged=await rotate(production,allNames);assert.equal(allChanged.status,200);assert.equal((await allChanged.json()).credentials.length,14);
   const overrides=JSON.parse(fs.readFileSync(tmp+'/state/credentials.json'));assert.deepEqual(Object.keys(overrides.accounts).sort(),allNames.sort());
+  // Explicit migration renews only a legacy hash-only override, and is then idempotent.
+  const protectedHashes=Object.fromEntries(Object.entries(overrides.accounts).filter(([name])=>name!=='JokerC2_06').map(([name,value])=>[name,value.hash]));
+  delete overrides.accounts.JokerC2_06.exportPassword;
+  fs.writeFileSync(tmp+'/state/credentials.json',JSON.stringify(overrides));
+  await stop(broker);broker=processServer(root+'/turn-broker/server.js',env);await ready(brokerURL+'/health');
+  assert.equal((await renewLegacy(production,{'Content-Type':'application/json'})).status,403);
+  const renewed=await renewLegacy(production);assert.equal(renewed.status,200);const renewal=await renewed.json();
+  assert.equal(renewal.credentials.length,1);assert.equal(renewal.credentials[0].username,'JokerC2_06');
+  assert.ok((await (await download(production,'production')).text()).includes('Passwort: '+renewal.credentials[0].password));
+  const migrated=JSON.parse(fs.readFileSync(tmp+'/state/credentials.json'));
+  for(const [name,hash] of Object.entries(protectedHashes))assert.equal(migrated.accounts[name].hash,hash,'unaffected reset hash preserved');
+  const unchanged=fs.readFileSync(tmp+'/state/credentials.json','utf8');
+  const again=await renewLegacy(production);assert.equal(again.status,200);assert.equal((await again.json()).credentials.length,0);
+  assert.equal(fs.readFileSync(tmp+'/state/credentials.json','utf8'),unchanged,'no-op migration does not write state');
+
   const hostCookie=await login('Host');const host=await connect('Host',hostCookie);
   const logout=await api('/logout',{cookie:hostCookie,method:'POST',headers:{'X-VDO-Action':'logout'}});assert.equal(logout.status,204);await closed(host);assert.equal((await identity(hostCookie)).status,401);
   // Restarting the broker must retain overrides and revoke an expired cookie.
@@ -151,8 +169,9 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   const sessionFile=tmp+'/state/sessions.json';const persisted=JSON.parse(fs.readFileSync(sessionFile));
   for(const value of Object.values(persisted)) if(value.username==='Creator02') value.expires=Date.now()-1;
   fs.writeFileSync(sessionFile,JSON.stringify(persisted));await stop(broker);broker=processServer(root+'/turn-broker/server.js',env);await ready(brokerURL+'/health');await closed(expiring);
+  const recoveredExport=await (await download(production,'production')).text();assert.ok(recoveredExport.includes('Passwort: '+finalCreds.credentials[0].password),'encrypted passwords survive broker restart');
   assert.equal((await identity(expireCookie)).status,401);assert.equal((await identity(production)).status,204);assert.equal((await identity(stagingCookie)).status,204);
   assert.equal(director.ws.readyState,WebSocket.OPEN);assert.equal(staging.ws.readyState,WebSocket.OPEN);
   const invalidAfterRestart=await api('/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-VDO-Action':'login','X-Real-IP':'restart-test'},body:new URLSearchParams({username:'Creator02',password:fixture.password}).toString()});assert.equal(invalidAfterRestart.status,401);
-  console.log('PASS: all three complete, room-scoped credential downloads; obsolete passwords suppressed; export role/CSRF/method checks; all 52 scoped home routes; Production portal/Director launch authorization; latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash-only storage; logout/expiry; durable overrides; flood isolation.');
+  console.log('PASS: all three complete, room-scoped credential downloads; reset passwords exportable after restart; obsolete passwords suppressed; export role/CSRF/method checks; all 52 scoped home routes; Production portal/Director launch authorization; latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash plus encrypted-export storage; explicit scoped legacy renewal and idempotence; logout/expiry; durable overrides; flood isolation.');
 })().catch(async error=>{console.error(error.stack);if(broker)console.error(broker.logs());if(signaling)console.error(signaling.logs());process.exitCode=1;}).finally(async()=>{peers.forEach(p=>p.ws.terminate());await stop(signaling);await stop(broker);fs.rmSync(tmp,{recursive:true,force:true});});

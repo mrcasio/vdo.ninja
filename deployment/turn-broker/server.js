@@ -24,7 +24,7 @@ const obsViewersPath = process.env.OBS_VIEWERS_FILE || '/run/secrets/obs-viewers
 const sessionFile = process.env.SESSION_FILE || '/run/session-state/sessions.json';
 const loginPagePath = process.env.LOGIN_PAGE || '/app/login.html';
 const sessionLifetime = 24 * 60 * 60 * 1000;
-const credentials = new CredentialStore(passwordHashesPath, process.env.CREDENTIAL_OVERRIDES || path.join(path.dirname(sessionFile), 'credentials.json'));
+const credentials = new CredentialStore(passwordHashesPath, process.env.CREDENTIAL_OVERRIDES || path.join(path.dirname(sessionFile), 'credentials.json'), process.env.PASSWORD_EXPORT_KEY_FILE || '/run/secrets/password-export.key');
 const adminPagePath = process.env.ADMIN_PAGE || '/app/production-access.html';
 const homePagePath = process.env.HOME_PAGE || '/app/home.html';
 const authAttempts = new RateLimiter(10, 40);
@@ -445,11 +445,19 @@ async function productionAccess(req, res) {
       changedAt: credentials.overrides.accounts[username]?.changedAt || null,
     })) });
   }
-  if (req.url !== '/api/production-access/rotate' || req.method !== 'POST') return send(res, 404, { error: 'Not found' });
-  if (!validAction(req, 'rotate-production-access') || req.headers['content-type'] !== 'application/json') return send(res, 403, { error: 'Forbidden' });
+  const renewLegacy = req.url === '/api/production-access/renew-legacy';
+  if ((!renewLegacy && req.url !== '/api/production-access/rotate') || req.method !== 'POST') return send(res, 404, { error: 'Not found' });
+  if (!validAction(req, renewLegacy ? 'renew-legacy-exports' : 'rotate-production-access') || req.headers['content-type'] !== 'application/json') return send(res, 403, { error: 'Forbidden' });
   if (rotationBusy) return send(res, 409, { error: 'Eine Änderung läuft bereits.' });
   let body;
   try { body = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'Invalid request' }); }
+  if (rotationBusy) return send(res, 409, { error: 'Eine Änderung läuft bereits.' });
+  if (renewLegacy) {
+    if (!body || Object.keys(body).join(',') !== 'confirm' || body.confirm !== 'RENEW_LEGACY_EXPORTS') return send(res, 400, { error: 'Explicit legacy renewal confirmation required' });
+    const usernames = Object.entries(credentials.overrides.accounts).filter(([name, record]) => rotatable(name, accounts[name]) && !record.exportPassword).map(([name]) => name);
+    if (!usernames.length) return send(res, 200, { credentials: [], message: 'Alle erneuerten Passwörter sind bereits exportierbar.' });
+    body = { confirm: 'ROTATE_PRODUCTION', usernames };
+  }
   if (!body || Object.keys(body).sort().join(',') !== 'confirm,usernames' || body.confirm !== 'ROTATE_PRODUCTION' ||
       !Array.isArray(body.usernames) || body.usernames.length < 1 || body.usernames.length > 14 ||
       new Set(body.usernames).size !== body.usernames.length ||
@@ -466,7 +474,7 @@ async function productionAccess(req, res) {
       const invite = Object.entries(shortlinks.links).find(([, link]) => link.username === item.username);
       item.link = invite ? allowedOrigin + '/l/' + invite[0] : null;
     }
-    return send(res, 200, { credentials: changed, message: 'Passwörter erneuert. Alte Sitzungen werden getrennt. Diese Passwörter werden nur jetzt angezeigt.' });
+    return send(res, 200, { credentials: changed, message: 'Passwörter erneuert. Alte Sitzungen werden getrennt. Die aktuellen Passwörter können jederzeit über die vollständige Production-Liste exportiert werden.' });
   } finally { rotationBusy = false; }
 }
 

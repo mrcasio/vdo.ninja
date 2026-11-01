@@ -19,6 +19,7 @@ for (const name of ['test','staging','production']) {
 }
 function make(dir) {
   fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(dir+'/password-export.key',randomBytes(32).toString('hex')+'\n',{mode:0o600});
   const hashes = {}, keys = {}, shortlinks = {}, viewers = {};
   const exports = {};
   for (const [username, account] of Object.entries(accounts)) {

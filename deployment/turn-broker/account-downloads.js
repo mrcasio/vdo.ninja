@@ -20,13 +20,14 @@ class AccountDownloads {
       'Erstellt: ' + new Date().toISOString(), 'Konten: ' + entries.length,
       'Enthält die für diesen Raum freigegebenen Konten und Links.',
       'Passwörter werden nur ausgegeben, wenn ihr gespeicherter Stand noch gültig ist.',
-      'Bereits erneuerte, nur als Prüfwert gespeicherte Passwörter sind nicht erneut auslesbar.', ''];
+      'Erneuerte Passwörter werden aus dem verschlüsselten Exportbestand ergänzt.', ''];
     for (const [username, account] of entries) {
       const role = username === 'Production' ? 'Haupt-Director / Production' : account.role === 'codirector' ? 'Rückkanal / Co-Director' : account.role === 'obs' ? 'OBS-Sammelkonto' : account.role === 'guest' ? 'Joker' : /^Creator/.test(account.label || username) ? 'Creator' : 'Host';
       lines.push('[' + username + ']', 'Benutzer: ' + username, 'Rolle: ' + role, 'Name: ' + (account.label || username));
       const saved = stored.accounts[username];
-      const password = saved && typeof saved.password === 'string' && saved.password.length >= 1 && saved.password.length <= 256 && !/[\r\n\x00]/.test(saved.password) &&
+      const original = saved && typeof saved.password === 'string' && saved.password.length >= 1 && saved.password.length <= 256 && !/[\r\n\x00]/.test(saved.password) &&
         /^[a-f0-9]{64}$/.test(saved.fingerprint || '') && saved.fingerprint === this.credentials.fingerprint(username) ? saved.password : null;
+      const password = this.credentials.exportPassword(username) || original;
       const rotated = this.credentials.overrides.accounts[username];
       lines.push('Passwort: ' + (password || (rotated ? 'NICHT ERNEUT AUSLESBAR (bereits erneuert; gespeicherte Liste dieser Änderung verwenden)' : 'NICHT VERFÜGBAR (in der Downloadquelle nicht hinterlegt)')));
       if (rotated?.changedAt) lines.push('Zuletzt erneuert: ' + rotated.changedAt);

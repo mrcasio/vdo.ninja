@@ -1,8 +1,8 @@
-/* easyCube access administration, 2026-10-31. AGPL-3.0. */
+/* easyCube access administration, 2026-11-01. AGPL-3.0. */
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomBytes, createHash, pbkdf2 } = require('node:crypto');
+const { randomBytes, createHash, createCipheriv, createDecipheriv, pbkdf2 } = require('node:crypto');
 const { promisify } = require('node:util');
 const derive = promisify(pbkdf2);
 
@@ -28,9 +28,17 @@ function atomicJSON(filename, data) {
   }
 }
 class CredentialStore {
-  constructor(baseFile, overrideFile) {
+  constructor(baseFile, overrideFile, exportKeyFile) {
     this.baseFile = baseFile;
     this.overrideFile = overrideFile;
+    this.exportKey = null;
+    if (exportKeyFile) {
+      try {
+        const value = fs.readFileSync(exportKeyFile, 'utf8').trim();
+        if (!/^[0-9a-f]{64}$/.test(value)) throw new Error('Invalid password-export key');
+        this.exportKey = Buffer.from(value, 'hex');
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
     this.overrides = { version: 1, accounts: {} };
     try {
       this.overrides = JSON.parse(fs.readFileSync(overrideFile, 'utf8'));
@@ -47,12 +55,39 @@ class CredentialStore {
     const record = this.record(username);
     return record ? createHash('sha256').update(record.salt + ':' + record.hash).digest('hex') : null;
   }
+  encryptPassword(username, password, record) {
+    if (!this.exportKey) throw new Error('Password-export encryption key is unavailable');
+    const nonce = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', this.exportKey, nonce);
+    cipher.setAAD(Buffer.from(JSON.stringify([username, record.salt, record.hash])));
+    const encrypted = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]);
+    return { version: 1, nonce: nonce.toString('hex'), tag: cipher.getAuthTag().toString('hex'), ciphertext: encrypted.toString('hex') };
+  }
+  exportPassword(username) {
+    const record = this.overrides.accounts[username];
+    if (!record?.exportPassword) return null;
+    const sealed = record.exportPassword;
+    if (!this.exportKey || sealed.version !== 1 || !/^[0-9a-f]{24}$/.test(sealed.nonce || '') ||
+        !/^[0-9a-f]{32}$/.test(sealed.tag || '') || !/^(?:[0-9a-f]{2}){1,256}$/.test(sealed.ciphertext || '')) throw new Error('Password export is unavailable');
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', this.exportKey, Buffer.from(sealed.nonce, 'hex'));
+      decipher.setAAD(Buffer.from(JSON.stringify([username, record.salt, record.hash])));
+      decipher.setAuthTag(Buffer.from(sealed.tag, 'hex'));
+      const password = Buffer.concat([decipher.update(Buffer.from(sealed.ciphertext, 'hex')), decipher.final()]).toString('utf8');
+      if (!password || /[\r\n\x00]/.test(password)) throw new Error('Invalid export value');
+      return password;
+    } catch { throw new Error('Password export could not be verified'); }
+  }
   async rotate(usernames) {
+    // Persist the hash and its encrypted export value in the same atomic record.
+    if (!this.exportKey) throw new Error('Password-export encryption key is unavailable');
     const changes = await Promise.all(usernames.map(async username => {
       const password = randomBytes(18).toString('base64url');
       const salt = randomBytes(16);
       const hash = await derive(password, salt, 310000, 32, 'sha256');
-      return { username, password, record: { salt: salt.toString('hex'), hash: hash.toString('hex'), iterations: 310000, changedAt: new Date().toISOString() } };
+      const record = { salt: salt.toString('hex'), hash: hash.toString('hex'), iterations: 310000, changedAt: new Date().toISOString() };
+      record.exportPassword = this.encryptPassword(username, password, record);
+      return { username, password, record };
     }));
     const next = { version: 1, accounts: { ...this.overrides.accounts } };
     for (const change of changes) next.accounts[change.username] = change.record;
