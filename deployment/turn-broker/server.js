@@ -10,6 +10,7 @@ const { participant, rotatable, CredentialStore, RateLimiter, atomicJSON } = req
 const path = require('node:path');
 const { Navigation } = require('./navigation');
 const { AccountDownloads } = require('./account-downloads');
+const { DisplayNames } = require('./display-names');
 
 const port = Number(process.env.PORT || 8080);
 const ttlSeconds = 10800;
@@ -25,6 +26,7 @@ const sessionFile = process.env.SESSION_FILE || '/run/session-state/sessions.jso
 const loginPagePath = process.env.LOGIN_PAGE || '/app/login.html';
 const sessionLifetime = 24 * 60 * 60 * 1000;
 const credentials = new CredentialStore(passwordHashesPath, process.env.CREDENTIAL_OVERRIDES || path.join(path.dirname(sessionFile), 'credentials.json'), process.env.PASSWORD_EXPORT_KEY_FILE || '/run/secrets/password-export.key');
+const displayNames = new DisplayNames(process.env.DISPLAY_NAMES_FILE || path.join(path.dirname(sessionFile), 'display-names.json'), policy);
 const adminPagePath = process.env.ADMIN_PAGE || '/app/production-access.html';
 const homePagePath = process.env.HOME_PAGE || '/app/home.html';
 const authAttempts = new RateLimiter(10, 40);
@@ -55,9 +57,9 @@ const obsViewers = JSON.parse(fs.readFileSync(obsViewersPath, 'utf8'));
 if (obsViewers.version !== 1 || !obsViewers.links || typeof obsViewers.links !== 'object' ||
     Array.isArray(obsViewers.links)) throw new Error('OBS viewer map is missing or invalid');
 
-const navigation = new Navigation({ origin: allowedOrigin, getPolicy: policy, links: shortlinks.links, viewers: obsViewers.links, allowEntry });
+const navigation = new Navigation({ origin: allowedOrigin, getPolicy: policy, links: shortlinks.links, viewers: obsViewers.links, allowEntry, displayNames });
 const accountDownloads = new AccountDownloads({ origin: allowedOrigin, getPolicy: policy, navigation, credentials,
-  passwordFile: process.env.ACCOUNT_EXPORT_FILE || '/run/secrets/account-export.json' });
+  passwordFile: process.env.ACCOUNT_EXPORT_FILE || '/run/secrets/account-export.json', displayNames });
 
 function obsViewer(token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(token)) return null;
@@ -421,12 +423,34 @@ function requestToken(config) {
 async function productionAccess(req, res) {
   if (!isProductionAdmin(req)) return send(res, 403, { error: 'Production login required' });
   const accounts = policy().accounts;
+  const accountList = /^\/api\/production-access\/accounts\/(test|staging|production)$/.exec(req.url);
+  const canManageParticipant = username => participant(accounts[username]) && policy().accounts.Production.rooms?.includes(accounts[username].room);
+  if (accountList && req.method === 'GET') {
+    if (!policy().accounts.Production.rooms?.includes(accountList[1])) return send(res, 403, { error: 'Room is not available' });
+    return send(res, 200, { room: accountList[1], accounts: Object.entries(accounts).filter(([name, account]) => canManageParticipant(name) && account.room === accountList[1]).map(([username, account]) => ({
+      username, label: account.label || username, displayName: displayNames.get(username), mediaLabel: displayNames.mediaLabel(username),
+      canRotate: rotatable(username, account), changedAt: credentials.overrides.accounts[username]?.changedAt || null,
+    })) });
+  }
+  if (['/api/production-access/profile','/api/production-access/share'].includes(req.url)) {
+    if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' });
+    const saving = req.url.endsWith('/profile');
+    if (!validAction(req, saving ? 'save-display-name' : 'copy-participant-access') || req.headers['content-type'] !== 'application/json') return send(res, 403, { error: 'Forbidden' });
+    let body;try { body = JSON.parse(await readBody(req)); } catch { return send(res, 400, { error: 'Invalid request' }); }
+    if (!body || Object.keys(body).sort().join(',') !== (saving ? 'displayName,username' : 'username') || typeof body.username !== 'string' || !Object.hasOwn(accounts,body.username) || !canManageParticipant(body.username)) return send(res, 400, { error: 'Nur Host-, Creator- und Joker-Konten sind hier verfügbar.' });
+    if (saving) {
+      try { return send(res, 200, displayNames.set(body.username,body.displayName)); }
+      catch (error) { if (error.code) throw error;return send(res, 400, { error: error.message }); }
+    }
+    const shared = accountDownloads.share(body.username);
+    return shared ? send(res,200,shared) : send(res,409,{ error: 'Das aktuelle Passwort ist noch nicht exportierbar.' });
+  }
   const download = /^\/api\/production-access\/export\/(test|staging|production)$/.exec(req.url);
   if (download) {
     if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' });
     if (!validAction(req, 'download-access-list')) return send(res, 403, { error: 'Forbidden' });
     const result = accountDownloads.render(download[1]);
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8',
+    res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8',
       'Content-Disposition': 'attachment; filename="' + result.filename + '"',
       'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
     return res.end(result.text);
@@ -614,7 +638,7 @@ async function handleRequest(req, res) {
       if (typeof username !== 'string' || !Object.hasOwn(policy.accounts, username)) {
         return send(res, 403, { error: 'Forbidden' });
       }
-      return send(res, 200, { username, canManageProductionAccess: username === 'Production' && policy.accounts?.Production?.role === 'director' });
+      return send(res, 200, { username, displayName: displayNames.get(username), mediaLabel: displayNames.mediaLabel(username), canManageProductionAccess: username === 'Production' && policy.accounts?.Production?.role === 'director' });
     } catch {
       return send(res, 503, { error: 'Account unavailable' });
     }

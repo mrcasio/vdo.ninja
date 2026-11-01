@@ -1,8 +1,9 @@
 /* Account-scoped home navigation, easyCube 2026-11-01. AGPL-3.0. */
 'use strict';
 class Navigation {
-  constructor({ origin, getPolicy, links, viewers, allowEntry }) {
+  constructor({ origin, getPolicy, links, viewers, allowEntry, displayNames }) {
     this.origin = origin; this.getPolicy = getPolicy; this.links = links; this.viewers = viewers; this.allowEntry = allowEntry;
+    this.displayNames = displayNames;
   }
   personal(username) {
     const matches = Object.entries(this.links).filter(([token, entry]) => /^[A-Za-z0-9_-]{22}$/.test(token) && entry.username === username && this.allowEntry(username, entry.path));
@@ -42,7 +43,7 @@ class Navigation {
     if (account.role === 'obs') {
       const sources = Object.entries(this.viewers).filter(([token, entry]) => /^[A-Za-z0-9_-]{32}$/.test(token) && policy.accounts?.[entry.participant]?.room === account.room);
       if (!sources.length) throw new Error('No OBS sources configured');
-      return { username, title: 'OBS · ' + account.room[0].toUpperCase() + account.room.slice(1), intro: 'Die freigegebenen Einzelquellen für diesen Raum.', default: '/home', sections: [{ title: 'Kameraquellen', links: sources.map(([token, entry]) => ({ label: policy.accounts[entry.participant].label || entry.participant, href: '/obs/' + token, description: 'Einzelquelle für OBS.' })) }] };
+      return { username, title: 'OBS · ' + account.room[0].toUpperCase() + account.room.slice(1), intro: 'Die freigegebenen Einzelquellen für diesen Raum.', default: '/home', sections: [{ title: 'Kameraquellen', links: sources.map(([token, entry]) => ({ label: this.displayNames?.mediaLabel(entry.participant) || policy.accounts[entry.participant].label || entry.participant, href: '/obs/' + token, description: 'Einzelquelle für OBS.' })) }] };
     }
     const target = this.personal(username);
     return { username, title: 'Dein Zugang', intro: 'Dein persönlicher Zugang zur Produktion.', default: target, sections: [{ title: 'Persönlicher Zugang', links: [{ label: 'Zugang öffnen', href: target }] }] };

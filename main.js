@@ -3639,6 +3639,11 @@ async function main() {
 		}
 	}
 	
+	// Load the authenticated production name before publishing; URLs and login identity stay fixed.
+	if (urlParams.has("push") && urlParams.has("room") && window.easycubeParticipantLabel) {
+		await window.easycubeParticipantLabel.start(session);
+	}
+
 	if (session.label){
 		pokeIframeAPI("this-label", session.label);
 	}

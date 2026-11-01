@@ -17,6 +17,7 @@
 		
 		</script>
 		<script src="/access-session.js?ver=2"></script>
+		<script src="/participant-label.js?ver=1"></script>
 		<script>
 			if (new URLSearchParams(window.location.search).has('podcast')) {
 				document.write('<style>#directorlayout,#controlButtons{display:none!important}</style>');
@@ -55,7 +56,7 @@
 					if (!response.ok) return;
 					const data = await response.json();
 					if (typeof data.username !== 'string' || !data.username) return;
-					document.getElementById('easycubeAccountName').textContent = data.username;
+					document.getElementById('easycubeAccountName').textContent = data.mediaLabel || data.username;
 					account.hidden = false;
 				} catch { /* Keep the page usable if the account label cannot load. */ }
 			}
@@ -72,7 +73,7 @@
 		<meta content="utf-8" http-equiv="encoding" />
 		<meta name="copyright" content="&copy; 2024 Steve Seguin" />
 		<meta name="license" content="/source/AGPLv3.md" />
-		<meta name="sourcecode" content="https://github.com/mrcasio/vdo.ninja/tree/codex/password-export-2026-11-01" />
+		<meta name="sourcecode" content="https://github.com/mrcasio/vdo.ninja/tree/codex/participant-tools-2026-11-01" />
 		<meta name="stance-on-war" content="Steve Seguin condemns Russia's brutal invasion of Ukraine 💙💛." />
 		<meta name="robots" content="index, follow">
 		<link rel="canonical" href="https://vdo.ninja/">
@@ -3501,7 +3502,7 @@
 				</script>
 
 		<script type="text/javascript" crossorigin="anonymous" id="lib-js" src="./lib.js?ver=1413"></script>
-		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1065"></script>
+		<script type="text/javascript" crossorigin="anonymous" id="main-js" src="./main.js?ver=1066"></script>
 		<script type="module" src="./podcast/bootstrap.js"></script>
 		<a href="/source/" style="position:fixed;bottom:4px;left:8px;z-index:2;color:#aaa;font-size:11px;" rel="license">Quellcode &amp; Lizenz (AGPL)</a>
 		
