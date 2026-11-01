@@ -20,9 +20,11 @@ for (const name of ['test','staging','production']) {
 function make(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const hashes = {}, keys = {}, shortlinks = {}, viewers = {};
+  const exports = {};
   for (const [username, account] of Object.entries(accounts)) {
     const salt = randomBytes(16);
     hashes[username] = { salt:salt.toString('hex'), hash:pbkdf2Sync(password,salt,310000,32,'sha256').toString('hex'), iterations:310000 };
+    exports[username] = { password, fingerprint:createHash('sha256').update(hashes[username].salt + ':' + hashes[username].hash).digest('hex') };
     keys[username] = key();
     const room = rooms[account.room];
     let params;
@@ -43,6 +45,7 @@ function make(dir) {
     shortlinks[randomBytes(16).toString('base64url')]={username:'Production',path:'/?'+params+'#?turn=twilio&turnkey='+keys.Production};
   }
   const policy={version:5,wireStreamSuffix:randomBytes(3).toString('hex'),rooms,accounts};
+  fs.writeFileSync(dir+'/account-export.json',JSON.stringify({version:1,accounts:exports}),{mode:0o600});
   for (const [file,data] of Object.entries({
     'access-policy.json':policy,'auth-password-hashes.json':{version:1,accounts:hashes},'shortlinks.json':{version:1,links:shortlinks},'obs-viewers.json':{version:1,links:viewers},'turn-key-hashes.json':{version:1,keys:Object.entries(keys).map(([label,key])=>({label,sha256:createHash('sha256').update(key).digest('hex')}))},
   })) fs.writeFileSync(dir+'/'+file,JSON.stringify(data),{mode:0o600});

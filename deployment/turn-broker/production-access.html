@@ -7,6 +7,7 @@
 </style>
 <main>
 <header><img src="/media/show-logo.png" alt="Was weiß ich?!"><div><a href="/home">Zur Übersicht</a><h1>Production-Zugänge</h1><div class="muted">Angemeldet als Production</div></div></header>
+<section class="card"><h2>Vollständige Zugangslisten</h2><p>Lade alle Benutzer, Rollen und persönlichen Links eines Raums als Textdatei herunter – einschließlich Rückkanal-Director, Production und OBS-Quellen.</p><p class="muted">Verfügbare, noch gültige Passwörter sind enthalten. Bereits erneuerte Passwörter können nicht erneut ausgelesen werden und sind entsprechend markiert. Verwende dafür die bei der Erneuerung gespeicherte Liste.</p><div class="toolbar"><button data-export="test">Test herunterladen</button><button data-export="staging">Staging herunterladen</button><button data-export="production">Production herunterladen</button></div><p id="export-message" role="status" aria-live="polite"></p></section>
 <section class="card"><p>Hier kannst du neue Passwörter für die Joker und Creator im Production-Raum erzeugen. Die ausgewählten Konten werden dabei abgemeldet und ihre laufenden Verbindungen getrennt.</p><p class="muted">Host, Production, Director-Zugänge sowie Test und Staging werden hier nicht geändert. Die persönlichen Kurzlinks bleiben erhalten.</p>
 <div class="toolbar"><button id="all">Alle auswählen</button><button id="jokers">Nur Joker</button><button id="creators">Nur Creator</button><button id="none">Auswahl aufheben</button></div>
 <div class="table-wrap"><table><thead><tr><th>Auswahl</th><th>Teilnehmer</th><th>Benutzername</th><th>Zuletzt erneuert</th></tr></thead><tbody id="accounts"></tbody></table></div>
@@ -21,6 +22,21 @@ const table = document.getElementById('accounts');
 const message = document.getElementById('message');
 const rotate = document.getElementById('rotate');
 let busy = false;
+let exporting = false;
+for (const button of document.querySelectorAll('[data-export]')) button.addEventListener('click', async () => {
+  if (exporting) return;
+  exporting = true;
+  const status = document.getElementById('export-message');status.textContent = 'Zugangsliste wird vorbereitet …';
+  for (const item of document.querySelectorAll('[data-export]')) item.disabled = true;
+  try {
+    const response = await fetch('/api/production-access/export/' + button.dataset.export, { method: 'POST', credentials: 'same-origin', cache: 'no-store', headers: { 'X-VDO-Action': 'download-access-list' } });
+    if (!response.ok) throw new Error('Download nicht möglich. Bitte mit dem Production-Account anmelden.');
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');anchor.href = url;anchor.download = button.dataset.export + '-Zugaenge-' + new Date().toISOString().slice(0,10) + '.txt';anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);status.textContent = 'Die vollständige Liste wurde zum Download bereitgestellt.';
+  } catch (error) { status.textContent = error.message; }
+  finally { exporting = false;for (const item of document.querySelectorAll('[data-export]')) item.disabled = false; }
+});
 function selected() { return [...table.querySelectorAll('input:checked')].map(input => input.value); }
 function sync() { rotate.disabled = busy || !selected().length; rotate.textContent = busy ? 'Passwörter werden erzeugt …' : 'Neue Passwörter erzeugen (' + selected().length + ')'; }
 async function load() {

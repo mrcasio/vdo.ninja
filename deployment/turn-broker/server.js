@@ -9,6 +9,7 @@ const { promisify } = require('node:util');
 const { participant, rotatable, CredentialStore, RateLimiter, atomicJSON } = require('./access-manager');
 const path = require('node:path');
 const { Navigation } = require('./navigation');
+const { AccountDownloads } = require('./account-downloads');
 
 const port = Number(process.env.PORT || 8080);
 const ttlSeconds = 10800;
@@ -55,6 +56,8 @@ if (obsViewers.version !== 1 || !obsViewers.links || typeof obsViewers.links !==
     Array.isArray(obsViewers.links)) throw new Error('OBS viewer map is missing or invalid');
 
 const navigation = new Navigation({ origin: allowedOrigin, getPolicy: policy, links: shortlinks.links, viewers: obsViewers.links, allowEntry });
+const accountDownloads = new AccountDownloads({ origin: allowedOrigin, getPolicy: policy, navigation, credentials,
+  passwordFile: process.env.ACCOUNT_EXPORT_FILE || '/run/secrets/account-export.json' });
 
 function obsViewer(token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{32}$/.test(token)) return null;
@@ -418,6 +421,16 @@ function requestToken(config) {
 async function productionAccess(req, res) {
   if (!isProductionAdmin(req)) return send(res, 403, { error: 'Production login required' });
   const accounts = policy().accounts;
+  const download = /^\/api\/production-access\/export\/(test|staging|production)$/.exec(req.url);
+  if (download) {
+    if (req.method !== 'POST') return send(res, 405, { error: 'Use POST' });
+    if (!validAction(req, 'download-access-list')) return send(res, 403, { error: 'Forbidden' });
+    const result = accountDownloads.render(download[1]);
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="' + result.filename + '"',
+      'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' });
+    return res.end(result.text);
+  }
   if (req.url === '/production-access' && req.method === 'GET') {
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store',

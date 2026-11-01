@@ -22,7 +22,7 @@ function processServer(file,env){
   const child=spawn(process.execPath,[file],{env:{...process.env,...env},stdio:['ignore','pipe','pipe']});
   let logs='';child.stdout.on('data',b=>logs+=b);child.stderr.on('data',b=>logs+=b);child.logs=()=>logs;return child;
 }
-const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html',HOME_PAGE:root+'/turn-broker/home.html'};
+const env={PORT:String(brokerPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:tmp+'/secrets/access-policy.json',PASSWORD_HASHES:tmp+'/secrets/auth-password-hashes.json',SHORTLINKS_FILE:tmp+'/secrets/shortlinks.json',OBS_VIEWERS_FILE:tmp+'/secrets/obs-viewers.json',TURN_KEY_HASHES:tmp+'/secrets/turn-key-hashes.json',SESSION_FILE:tmp+'/state/sessions.json',LOGIN_PAGE:root+'/turn-broker/login.html',ADMIN_PAGE:root+'/turn-broker/production-access.html',HOME_PAGE:root+'/turn-broker/home.html',ACCOUNT_EXPORT_FILE:tmp+'/secrets/account-export.json'};
 async function ready(url){for(let i=0;i<100;i++){try{if((await fetch(url)).ok)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Server startup failed');}
 async function api(url,{cookie,method='GET',body,headers={}}={}){
   return fetch(brokerURL+url,{method,redirect:'manual',headers:{Origin:origin,...(cookie?{Cookie:cookie}:{}),...headers},...(body!==undefined?{body}:{} )});
@@ -47,12 +47,14 @@ async function connect(username,cookie){
 }
 async function closed(peer){if(peer.ws.readyState===WebSocket.CLOSED)return;await Promise.race([new Promise(r=>peer.ws.once('close',r)),new Promise((_,reject)=>setTimeout(()=>reject(Error('Connection not revoked')),4500))]);}
 async function rotate(cookie,usernames){return api('/api/production-access/rotate',{cookie,method:'POST',headers:{'Content-Type':'application/json','X-VDO-Action':'rotate-production-access'},body:JSON.stringify({usernames,confirm:'ROTATE_PRODUCTION'})});}
+async function download(cookie, name, headers={'X-VDO-Action':'download-access-list'}) { return api('/api/production-access/export/'+name,{cookie,method:'POST',headers}); }
 async function stop(child){if(!child||child.exitCode!==null)return;child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));}
 (async()=>{
   broker=processServer(root+'/turn-broker/server.js',env);await ready(brokerURL+'/health');
   signaling=processServer(root+'/signaling/vdoninja_advanced.js',{PORT:String(signalingPort),ALLOWED_ORIGIN:origin,ACCESS_POLICY:env.ACCESS_POLICY,AUTH_BROKER_URL:brokerURL});await ready('http://127.0.0.1:'+signalingPort+'/');
   const welcome=await api('/home');assert.equal(welcome.status,200);assert.ok((await welcome.text()).includes('loginForm'));
   assert.equal((await api('/api/navigation')).status,401);
+  assert.equal((await download(undefined,'production')).status,403);
   for(const [username,account] of Object.entries(fixture.policy.accounts)) {
     if(username==='Production') continue;
     const ownCookie=await login(username);
@@ -66,6 +68,7 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
       assert.equal(ownHome.status,302);const target=ownHome.headers.get('location');assert.equal(fixture.shortlinks[target.slice('/l/'.length)].username,username);assert.equal(nav.default,target);
     }
     assert.equal((await api('/launch/director/production',{cookie:ownCookie})).status,403);
+    assert.equal((await download(ownCookie,'test')).status,403,'only Production can download any list');
   }
   const production=await login('Production');const production2=await login('Production');
   const productionHome=await api('/home',{cookie:production});assert.equal(productionHome.status,200);assert.ok((await productionHome.text()).includes('api/navigation'));
@@ -78,6 +81,21 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   }
   assert.equal((await api('/api/navigation?username=Production')).status,404);
 
+  for (const roomName of ['test','staging','production']) {
+    const response=await download(production,roomName);assert.equal(response.status,200);assert.match(response.headers.get('cache-control'),/no-store/);assert.match(response.headers.get('content-disposition'),/^attachment;/);
+    const text=await response.text();const usernames=[...text.matchAll(/^Benutzer: (.+)$/gm)].map(x=>x[1]);
+    const expected=Object.entries(fixture.policy.accounts).filter(([u,a])=>u==='Production'||a.room===roomName).map(([u])=>u);
+    assert.deepEqual(usernames.sort(),expected.sort());assert.equal(usernames.length,18);
+    assert.equal((text.match(/^Passwort: /gm)||[]).length,18);assert.ok(text.includes('Passwort: '+fixture.password));assert.ok(!text.includes('NICHT VERFÜGBAR'));
+    const permittedTokens=Object.entries(fixture.shortlinks).filter(([,e])=>e.username==='Production'?new URL(e.path,origin).searchParams.get('room')===fixture.policy.rooms[roomName].id:fixture.policy.accounts[e.username].room===roomName).map(([token])=>token);
+    for(const [token,e] of Object.entries(fixture.shortlinks)) if(!permittedTokens.includes(token))assert.ok(!text.includes('/l/'+token),'no cross-room invitation leaks');
+    for(const [token,e] of Object.entries(fixture.viewers)) assert.equal(text.includes('/obs/'+token),fixture.policy.accounts[e.participant].room===roomName);
+  }
+  assert.equal((await download(production,'production',{})).status,403,'download requires action header');
+  assert.equal((await download(production,'production',{'X-VDO-Action':'download-access-list',Origin:'https://evil.invalid'})).status,403);
+  assert.equal((await api('/api/production-access/export/production',{cookie:production})).status,405,'GET cannot export credentials');
+  assert.equal((await download(production,'all')).status,404,'only fixed room names');
+  assert.equal((await download(undefined,'test',{'X-VDO-Action':'download-access-list','X-Authenticated-User':'Production'})).status,403);
   assert.equal((await identity(production)).status,204,'Production retains multiple sessions');
   const admin=await api('/api/production-access',{cookie:production});assert.equal(admin.status,200);const list=await admin.json();assert.equal(list.accounts.length,14);assert.ok(!list.accounts.some(x=>['Host','Production'].includes(x.username)));
   const guestCookie=await login('JokerC1_01');const guest=await connect('JokerC1_01',guestCookie);
@@ -106,6 +124,11 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   for(const user of ['Host','Production','StagingCreator01','TestJokerC1_01','ProductionDirector']) assert.equal((await rotate(production,[user])).status,400,'protected '+user);
   assert.equal((await api('/api/production-access/rotate',{cookie:production,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usernames:['Creator01'],confirm:'ROTATE_PRODUCTION'})})).status,403,'action header required');
   const changed=await rotate(production,['JokerC1_01','Creator01']);assert.equal(changed.status,200);const changedData=await changed.json();assert.equal(changedData.credentials.length,2);
+  const rotatedExport=await (await download(production,'production')).text();
+  assert.equal((rotatedExport.match(/Passwort: NICHT ERNEUT AUSLESBAR/g)||[]).length,2);
+  assert.ok(!rotatedExport.includes(changedData.credentials[0].password));
+  const block=rotatedExport.split('[JokerC1_01]')[1].split('\n\n')[0];assert.ok(!block.includes(fixture.password),'obsolete password must never be exported');
+  assert.ok(!(await (await download(production,'staging')).text()).includes('NICHT ERNEUT AUSLESBAR'));
   await closed(reloaded);await closed(creator);
   assert.equal((await identity(newCookie)).status,401);assert.equal((await identity(creatorCookie)).status,401);
   assert.equal(staging.ws.readyState,WebSocket.OPEN);assert.equal(director.ws.readyState,WebSocket.OPEN);assert.equal(director2.ws.readyState,WebSocket.OPEN);
@@ -131,5 +154,5 @@ async function stop(child){if(!child||child.exitCode!==null)return;child.kill('S
   assert.equal((await identity(expireCookie)).status,401);assert.equal((await identity(production)).status,204);assert.equal((await identity(stagingCookie)).status,204);
   assert.equal(director.ws.readyState,WebSocket.OPEN);assert.equal(staging.ws.readyState,WebSocket.OPEN);
   const invalidAfterRestart=await api('/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-VDO-Action':'login','X-Real-IP':'restart-test'},body:new URLSearchParams({username:'Creator02',password:fixture.password}).toString()});assert.equal(invalidAfterRestart.status,401);
-  console.log('PASS: all 52 scoped home routes; Production portal/Director launch authorization; latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash-only storage; logout/expiry; durable overrides; flood isolation.');
+  console.log('PASS: all three complete, room-scoped credential downloads; obsolete passwords suppressed; export role/CSRF/method checks; all 52 scoped home routes; Production portal/Director launch authorization; latest login wins; old connections and receiver peers revoked; reload takeover; Production multitab; all 96 links; admin role and CSRF; protected accounts; 14-account rotation; hash-only storage; logout/expiry; durable overrides; flood isolation.');
 })().catch(async error=>{console.error(error.stack);if(broker)console.error(broker.logs());if(signaling)console.error(signaling.logs());process.exitCode=1;}).finally(async()=>{peers.forEach(p=>p.ws.terminate());await stop(signaling);await stop(broker);fs.rmSync(tmp,{recursive:true,force:true});});
